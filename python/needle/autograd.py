@@ -386,26 +386,25 @@ def compute_gradient_of_variables(output_tensor, out_grad):
 
     ### BEGIN YOUR SOLUTION
     for node in reverse_topo_order:
-        node.grad = sum_node_list(node_to_output_grads_list[node])
-        if len(node.inputs) != 0:
-            # FIX @ 2024/11/10
-            # node_input_grads is a list of the partial derivative of all inputs
-            # there may be many operations with out_grad tuple, like Stack.
-            # So, for consistency, we view all the gradient as tuple here.
-            # Then, we don't need to explicitly trans a single node_input_grads into
-            # a list or trans the tuple kind node_input_grads to list, like the 
-            # commented code below.
-            node_input_grads = node.op.gradient_as_tuple(node.grad, node)
+        # FIX @ 2024/11/23: node must require grad, then could be added to the list
+        if node.requires_grad:
+            node.grad = sum_node_list(node_to_output_grads_list[node])
+            if len(node.inputs) != 0:
+                # FIX @ 2024/11/10
+                # node_input_grads is a list of the partial derivative of all inputs
+                # there may be many operations with out_grad tuple, like Stack.
+                # So, for consistency, we view all the gradient as tuple here.
+                # Then, we don't need to explicitly trans a single node_input_grads into
+                # a list or trans the tuple kind node_input_grads to list, like the 
+                # commented code below.
+                node_input_grads = node.op.gradient_as_tuple(node.grad, node)
 
-            # if isinstance(node_input_grads, Tensor):
-            #     node_input_grads = [node_input_grads]
-            # if isinstance(node_input_grads, Tuple):
-            #     node_input_grads = list(node_input_grads)
-            
-            for i, node_input in enumerate(node.inputs):
-                if node_input not in node_to_output_grads_list:
-                    node_to_output_grads_list[node_input] = []
-                node_to_output_grads_list[node_input].append(node_input_grads[i])
+                for i, node_input in enumerate(node.inputs):
+                    # FIX @ 2024/11/23: node must require grad, then could be added to the list
+                    if node_input.requires_grad:
+                        if node_input not in node_to_output_grads_list:
+                            node_to_output_grads_list[node_input] = []
+                        node_to_output_grads_list[node_input].append(node_input_grads[i])
     ### END YOUR SOLUTION
 
 

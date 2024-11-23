@@ -436,7 +436,7 @@ class Stack(TensorOp):
         """
         self.axis = axis
 
-    def compute(self, args: Tuple[NDArray, ...]) -> NDArray:
+    def compute(self, args: Tuple[NDArray]) -> NDArray:
         ### BEGIN YOUR SOLUTION
         # Author: Qingzheng Wang
         assert len(args) > 0
@@ -689,21 +689,20 @@ class Conv(TensorOp):
 def conv(a, b, stride=1, padding=1):
     return Conv(stride, padding)(a, b)
 
-### ==================================== CTC Loss ========================================== ###
-# NOTE: We decide to write CTCLoss as a TensorOp, because the Needle Tensor have not implemented 
-# the __getitem__ and __setitem__ method, so many Tensor operations cannot directly used.
-# Instead, the NDArray have implemented these methods, so we can use NDArray to implement the CTCLoss.
-# We implemented plenty of operators `compute` in NDArray, and directly use these NDArray `compute`
-# to implement the `gradient`, which prevent to write __getitem__ and __setitem__ on Tensor in `gradient`
-# computation. 
-#
-# The following code is adapted from Qingzheng's homework for the 11785 (Introduction to Deep Learning).
+### ==================================== CTC Loss ===================================================== ###
+# NOTE: We decide to write CTCLoss as a TensorOp, because the Needle Tensor have not implemented          #
+# the __getitem__ and __setitem__ method, so many Tensor operations cannot directly used.                 #
+# Instead, the NDArray have implemented these methods, so we can use NDArray to implement the CTCLoss.    #
+# We implemented plenty of operators `compute` in NDArray, and directly use these NDArray `compute`       #
+# to implement the `gradient`, which prevent to write __getitem__ and __setitem__ on Tensor in `gradient` #
+# computation.                                                                                            #
+# ======================================================================================================= #
 
 class CTC:
     """
     CTC contains nessesary NDArray operators to compute the CTC loss.
     """
-    def __init__(self, blank=0):
+    def __init__(self, blank=0.0):
         """Initialize instance variables
 
         Argument(s)
@@ -733,19 +732,17 @@ class CTC:
                       skip connections
         ex: [0,0,0,1,0,0,0,1,0]
         """
+
         extended_symbols = array_api.full((2 * len(target) + 1, ), self.blank, device=target.device)
         for i in range(len(target)):
-            print(f"extending [{i} / {len(target)}]")
             extended_symbols[2 * i + 1] = target[i]
 
-        print(f"extended_symbols: {extended_symbols}")
         N = len(extended_symbols)
 
-        skip_connect = [0] * N
+        skip_connect = [0.0] * N
         for i in range(2, N):
-            print(f"skip connecting [{i} / {N}]")
-            if extended_symbols[i] != self.blank and extended_symbols[i] != extended_symbols[i-2]:
-                skip_connect[i] = 1
+            if float(extended_symbols[i].numpy()) != self.blank and extended_symbols[i] != extended_symbols[i-2]:
+                skip_connect[i] = 1.0
 
         extended_symbols = array_api.array(extended_symbols, device=target.device)
         skip_connect = array_api.array(skip_connect, device=target.device)
@@ -778,17 +775,17 @@ class CTC:
         S, T = len(extended_symbols), len(logits)
         alpha = array_api.full((T, S), 0, dtype="float32", device=logits.device)
 
-        alpha[0, 0] = logits[0, extended_symbols[0]]
+        alpha[0, 0] = logits[0, int(extended_symbols[0].numpy())]
         if S > 1:
-            alpha[0, 1] = logits[0, extended_symbols[1]]
+            alpha[0, 1] = logits[0, int(extended_symbols[1].numpy())]
 
         for t in range(1, T):
-            alpha[t, 0] = alpha[t-1, 0] * logits[t, extended_symbols[0]]
+            alpha[t, 0] = alpha[t-1, 0] * logits[t, int(extended_symbols[0].numpy())]
             for i in range(1, S):
                 alpha[t, i] = alpha[t-1, i] + alpha[t-1, i-1]
-                if skip_connect[i]:
-                    alpha[t, i] += alpha[t-1, i-2]
-                alpha[t, i] *= logits[t, extended_symbols[i]]
+                if float(skip_connect[i].numpy()):
+                    alpha[t, i] = alpha[t, i] + alpha[t-1, i-2]
+                alpha[t, i] = alpha[t, i] * logits[t, int(extended_symbols[i].numpy())]
 
         return alpha
 
@@ -814,21 +811,21 @@ class CTC:
         S, T = len(extended_symbols), len(logits)
         beta = array_api.full((T, S), 0, dtype="float32", device=logits.device)
 
-        beta[T-1, S-1] = logits[T-1, extended_symbols[S-1]]
+        beta[T-1, S-1] = logits[T-1, int(extended_symbols[S-1].numpy())]
         if S > 1:
-            beta[T-1, S-2] = logits[T-1, extended_symbols[S-2]]
+            beta[T-1, S-2] = logits[T-1, int(extended_symbols[S-2].numpy())]
 
         for t in reversed(range(T-1)):
-            beta[t, S-1] = beta[t+1, S-1] * logits[t, extended_symbols[S-1]]
+            beta[t, S-1] = beta[t+1, S-1] * logits[t, int(extended_symbols[S-1].numpy())]
             for i in reversed(range(S-1)):
                 beta[t, i] = beta[t+1, i] + beta[t+1, i+1]
-                if i < S-2 and skip_connect[i+2]:
+                if i < S-2 and float(skip_connect[i+2].numpy()):
                     beta[t, i] += beta[t+1, i+2]
-                beta[t, i] *= logits[t, extended_symbols[i]]
+                beta[t, i] *= logits[t, int(extended_symbols[i].numpy())]
 
         for t in reversed(range(T)):
             for i in reversed(range(S)):
-                beta[t, i] /= logits[t, extended_symbols[i]]
+                beta[t, i] /= logits[t, int(extended_symbols[i].numpy())]
 
         return beta
 
@@ -852,18 +849,17 @@ class CTC:
         gamma = array_api.full((T, S), 0, dtype="float32", device=alpha.device)
 
         for t in range(T):
-            sum_gamma = summation(alpha[t, :] * beta[t, :], axes=1)
+            sum_gamma = float((alpha[t, :] * beta[t, :]).sum(axis=1).numpy())
             gamma[t, :] = (alpha[t, :] * beta[t, :]) / sum_gamma
         
         return gamma
 
 
 class CTCLoss(TensorOp):
-    def __init__(self, blank=0, reduction="mean"):
+    def __init__(self, blank=0.0, reduction="mean"):
         self.blank = blank
         self.reduction = reduction
         self.ctc = CTC(blank)
-        self.gammas = None
     
     def compute(self, logits, target, input_lengths, target_lengths):
         """CTC loss forward
@@ -896,7 +892,6 @@ class CTCLoss(TensorOp):
         B, _ = target.shape
         total_loss = array_api.full((B, ), 0, dtype="float32", device=logits.device)
         extended_symbols_list = []
-        gammas = []
 
         for batch_itr in range(B):
             # -------------------------------------------->
@@ -911,14 +906,13 @@ class CTCLoss(TensorOp):
             #     Compute expected divergence for each batch and store it in totalLoss
             #     Take an average over all batches and return final result
 
-            target_trunc = target[batch_itr, :target_lengths[batch_itr]]
-            logits_trunc = logits[:input_lengths[batch_itr], batch_itr]
+            target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
+            logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
 
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
             alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
             beta = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
             gamma = self.ctc.get_posterior_probs(alpha, beta)
-            gammas.append(gamma)
             extended_symbols_list.append(extended_symbols)
 
             T = gamma.shape[0]
@@ -927,53 +921,59 @@ class CTCLoss(TensorOp):
 
             for t in range(T):
                 for s in range(S):
-                    logits_extended[t, s] = logits_trunc[t, extended_symbols[s]]
+                    logits_extended[t, s] = logits_trunc[t, int(extended_symbols[s].numpy())]
 
-            div = summation(gamma * log(logits_extended), axes=(0, 1)) # Sum over all the symbols and time steps
+            div = (gamma * logits_extended.log()).sum(axis=1).sum(axis=0) # Sum over all the symbols and time steps
             total_loss[batch_itr] = -div
 
-        self.gammas = gammas
-
         if self.reduction == "mean":
-            return total_loss.sum(axes=0) / B
+            return total_loss.sum(axis=0) / B
         elif self.reduction == "sum":
-            return total_loss.sum(axes=0)
+            return total_loss.sum(axis=0)
         else:
             raise ValueError(f"Invalid reduction type {self.reduction}")
 
     def gradient(self, out_grad: Tensor, node: Tensor):
         logits, target, input_lengths, target_lengths = node.inputs
-        return ctc_loss_gradient(
-            self.gammas, logits, target, input_lengths, target_lengths
+
+        grad = ctc_loss_gradient(
+            logits, target, input_lengths, target_lengths, self.blank, self.reduction
         )
+
+        return out_grad.reshape((1, ) * len(grad.shape)).broadcast_to(grad.shape) * grad
+
+def ctc_loss(logits, target, input_lengths, target_lengths, blank, reduction):
+    return CTCLoss(blank, reduction)(logits, target, input_lengths, target_lengths)
 
 class CTCLossGradient(TensorOp):
     """ CTC Loss backward operator
     Computes the gradient of the CTC loss with respect to the logits.
     """
-    def __init__(self, blank=0, reduction="mean"):
+    def __init__(self, blank=0.0, reduction="mean"):
         self.blank = blank
         self.reduction = reduction
         self.ctc = CTC(blank)
     
     def compute(
-            self, gammas: NDArray, logits: NDArray, 
-            target: NDArray, input_lengths: NDArray, target_lengths: NDArray
+            self, logits: NDArray, target: NDArray, 
+            input_lengths: NDArray, target_lengths: NDArray
         ) -> NDArray:
         _, B, _ = logits.shape
         grad = array_api.full(logits.shape, 0, dtype="float32", device=logits.device)
 
         for batch_itr in range(B):
-            gamma = gammas[batch_itr]
-            T, S = gamma.shape
+            target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
+            logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
 
-            target_trunc = target[batch_itr, :target_lengths[batch_itr]]
-            logits_trunc = logits[:input_lengths[batch_itr], batch_itr]
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
+            alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
+            beta = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
+            gamma = self.ctc.get_posterior_probs(alpha, beta)
+            T, S = gamma.shape
 
             for t in range(T):
                 for s in range(S):
-                    grad[t, batch_itr, extended_symbols[s]] -= gamma[t, s] / logits_trunc[t, extended_symbols[s]]
+                    grad[t, batch_itr, int(extended_symbols[s].numpy())] -= (gamma[t, s] / logits_trunc[t, int(extended_symbols[s].numpy())]).compact().reshape((1, 1, 1))
             
         return grad
 
@@ -981,11 +981,12 @@ class CTCLossGradient(TensorOp):
         pass
 
 def ctc_loss_gradient(
-        gammas, logits, target, input_lengths, 
-        target_lengths, blank=0, reduction="mean"
+        logits, target, input_lengths, 
+        target_lengths, blank=0.0, reduction="mean"
     ):
+
     return CTCLossGradient(
         blank, reduction
-    )(gammas, logits, target, input_lengths, target_lengths)
+    )(logits, target, input_lengths, target_lengths)
 
 # Author: Qingzheng Wang
