@@ -689,5 +689,301 @@ class Conv(TensorOp):
 def conv(a, b, stride=1, padding=1):
     return Conv(stride, padding)(a, b)
 
+### ==================================== CTC Loss ========================================== ###
+# NOTE: We decide to write CTCLoss as a TensorOp, because the Needle Tensor have not implemented 
+# the __getitem__ and __setitem__ method, so many Tensor operations cannot directly used.
+# Instead, the NDArray have implemented these methods, so we can use NDArray to implement the CTCLoss.
+# We implemented plenty of operators `compute` in NDArray, and directly use these NDArray `compute`
+# to implement the `gradient`, which prevent to write __getitem__ and __setitem__ on Tensor in `gradient`
+# computation. 
+#
+# The following code is adapted from Qingzheng's homework for the 11785 (Introduction to Deep Learning).
+
+class CTC:
+    """
+    CTC contains nessesary NDArray operators to compute the CTC loss.
+    """
+    def __init__(self, blank=0):
+        """Initialize instance variables
+
+        Argument(s)
+        -----------
+        blank (int, optional): blank label index. Default 0.
+        """
+
+        # No need to modify
+        self.blank = blank
+
+    def extend_target_with_blank(self, target: NDArray) -> Tuple[NDArray, NDArray]:
+        """Extend target sequence with blank.
+
+        Input
+        -----
+        target: (NDArray, dim = (target_len,))
+                target output
+        ex: [B,IY,IY,F]
+
+        Return
+        ------
+        extended_symbols: (NDArray, dim = (2 * target_len + 1,))
+                          extended target sequence with blanks
+        ex: [-,B,-,IY,-,IY,-,F,-]
+
+        skip_connect: (np.array, dim = (2 * target_len + 1,))
+                      skip connections
+        ex: [0,0,0,1,0,0,0,1,0]
+        """
+        extended_symbols = [self.blank]
+        for symbol in target:
+            extended_symbols.append(symbol)
+            extended_symbols.append(self.blank)
+
+        N = len(extended_symbols)
+
+        skip_connect = [0] * N
+        for i in range(2, N):
+            if extended_symbols[i] != self.blank and extended_symbols[i] != extended_symbols[i-2]:
+                skip_connect[i] = 1
+
+        extended_symbols = array_api.array(extended_symbols, device=target.device)
+        skip_connect = array_api.array(skip_connect, device=target.device)
+
+        return extended_symbols, skip_connect
+
+    def get_forward_probs(self, logits, extended_symbols, skip_connect):
+        """Compute forward probabilities.
+
+        Input
+        -----
+        logits: (NDArray, dim = (input_len, len(Symbols)))
+                predict (log) probabilities
+
+                To get a certain symbol i's logit as a certain time stamp t:
+                p(t,s(i)) = logits[t, qextSymbols[i]]
+
+        extended_symbols: (NDArray, dim = (2 * target_len + 1,))
+                          extended label sequence with blanks
+
+        skip_connect: (NDArray, dim = (2 * target_len + 1,))
+                      skip connections
+
+        Return
+        ------
+        alpha: (NDArray, dim = (input_len, 2 * target_len + 1))
+                forward probabilities
+        """
+
+        S, T = len(extended_symbols), len(logits)
+        alpha = array_api.full((T, S), 0, dtype="float32", device=logits.device)
+
+        alpha[0, 0] = logits[0, extended_symbols[0]]
+        if S > 1:
+            alpha[0, 1] = logits[0, extended_symbols[1]]
+
+        for t in range(1, T):
+            alpha[t, 0] = alpha[t-1, 0] * logits[t, extended_symbols[0]]
+            for i in range(1, S):
+                alpha[t, i] = alpha[t-1, i] + alpha[t-1, i-1]
+                if skip_connect[i]:
+                    alpha[t, i] += alpha[t-1, i-2]
+                alpha[t, i] *= logits[t, extended_symbols[i]]
+
+        return alpha
+
+    def get_backward_probs(self, logits, extended_symbols, skip_connect):
+        """Compute backward probabilities.
+
+        Input
+        -----
+        logits: (NDArray, dim = (input_len, len(symbols)))
+                predict (log) probabilities
+
+        extended_symbols: (NDArray, dim = (2 * target_len + 1,))
+                          extended label sequence with blanks
+
+        skip_connect: (NDArray, dim = (2 * target_len + 1,))
+                      skip connections
+
+        Return
+        ------
+        beta: (NDArray, dim = (input_len, 2 * target_len + 1))
+                backward probabilities
+        """
+        S, T = len(extended_symbols), len(logits)
+        beta = array_api.full((T, S), 0, dtype="float32", device=logits.device)
+
+        beta[T-1, S-1] = logits[T-1, extended_symbols[S-1]]
+        if S > 1:
+            beta[T-1, S-2] = logits[T-1, extended_symbols[S-2]]
+
+        for t in reversed(range(T-1)):
+            beta[t, S-1] = beta[t+1, S-1] * logits[t, extended_symbols[S-1]]
+            for i in reversed(range(S-1)):
+                beta[t, i] = beta[t+1, i] + beta[t+1, i+1]
+                if i < S-2 and skip_connect[i+2]:
+                    beta[t, i] += beta[t+1, i+2]
+                beta[t, i] *= logits[t, extended_symbols[i]]
+
+        for t in reversed(range(T)):
+            for i in reversed(range(S)):
+                beta[t, i] /= logits[t, extended_symbols[i]]
+
+        return beta
+
+    def get_posterior_probs(self, alpha, beta):
+        """Compute posterior probabilities.
+
+        Input
+        -----
+        alpha: (NDArray, dim = (input_len, 2 * target_len + 1))
+                forward probability
+
+        beta: (NDArray, dim = (input_len, 2 * target_len + 1))
+                backward probability
+
+        Return
+        ------
+        gamma: (NDArray, dim = (input_len, 2 * target_len + 1))
+                posterior probability
+        """
+        T, S = alpha.shape
+        gamma = array_api.full((T, S), 0, dtype="float32", device=alpha.device)
+
+        for t in range(T):
+            sum_gamma = summation(alpha[t, :] * beta[t, :], axes=1)
+            gamma[t, :] = (alpha[t, :] * beta[t, :]) / sum_gamma
+        
+        return gamma
+
+
+class CTCLoss(TensorOp):
+    def __init__(self, blank=0, reduction="mean"):
+        self.blank = blank
+        self.reduction = reduction
+        self.ctc = CTC(blank)
+        self.gammas = None
+    
+    def compute(self, logits, target, input_lengths, target_lengths):
+        """CTC loss forward
+
+		Computes the CTC Loss by calculating forward, backward, and
+		posterior proabilites, and then calculating the avg. loss between
+		targets and predicted log probabilities
+
+        Input
+        -----
+        logits [NDArray, dim=(seq_length, batch_size, len(symbols)]:
+			log probabilities (output sequence) from the RNN/GRU
+
+        target [NDArray, dim=(batch_size, padded_target_len)]:
+            target sequences
+
+        input_lengths [NDArray, dim=(batch_size,)]:
+            lengths of the inputs
+
+        target_lengths [NDArray, dim=(batch_size,)]:
+            lengths of the target
+
+        Returns
+        -------
+        loss [float]:
+            avg. divergence between the posterior probability and the target
+
+        """
+
+        B, _ = target.shape
+        total_loss = array_api.full((B), 0, dtype="float32", device=logits.device)
+        extended_symbols_list = []
+        gammas = []
+
+        for batch_itr in range(B):
+            # -------------------------------------------->
+            # Computing CTC Loss for single batch
+            # Process:
+            #     Truncate the target to target length
+            #     Truncate the logits to input length
+            #     Extend target sequence with blank
+            #     Compute forward probabilities
+            #     Compute backward probabilities
+            #     Compute posteriors using total probability function
+            #     Compute expected divergence for each batch and store it in totalLoss
+            #     Take an average over all batches and return final result
+
+            target_trunc = target[batch_itr, :target_lengths[batch_itr]]
+            logits_trunc = logits[:input_lengths[batch_itr], batch_itr]
+
+            extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
+            alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
+            beta = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
+            gamma = self.ctc.get_posterior_probs(alpha, beta)
+            gammas.append(gamma)
+            extended_symbols_list.append(extended_symbols)
+
+            T = gamma.shape[0]
+            S = gamma.shape[1]
+            logits_extended  = array_api.full((T, S), 0, dtype="float32", device=logits.device)
+
+            for t in range(T):
+                for s in range(S):
+                    logits_extended[t, s] = logits_trunc[t, extended_symbols[s]]
+
+            div = summation(gamma * log(logits_extended), axes=(0, 1)) # Sum over all the symbols and time steps
+            total_loss[batch_itr] = -div
+
+        self.gammas = gammas
+
+        if self.reduction == "mean":
+            return total_loss.sum(axes=0) / B
+        elif self.reduction == "sum":
+            return total_loss.sum(axes=0)
+        else:
+            raise ValueError(f"Invalid reduction type {self.reduction}")
+
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        logits, target, input_lengths, target_lengths = node.inputs
+        return ctc_loss_gradient(
+            self.gammas, logits, target, input_lengths, target_lengths
+        )
+
+class CTCLossGradient(TensorOp):
+    """ CTC Loss backward operator
+    Computes the gradient of the CTC loss with respect to the logits.
+    """
+    def __init__(self, blank=0, reduction="mean"):
+        self.blank = blank
+        self.reduction = reduction
+        self.ctc = CTC(blank)
+    
+    def compute(
+            self, gammas: NDArray, logits: NDArray, 
+            target: NDArray, input_lengths: NDArray, target_lengths: NDArray
+        ) -> NDArray:
+        _, B, _ = logits.shape
+        grad = array_api.full(logits.shape, 0, dtype="float32", device=logits.device)
+
+        for batch_itr in range(B):
+            gamma = gammas[batch_itr]
+            T, S = gamma.shape
+
+            target_trunc = target[batch_itr, :target_lengths[batch_itr]]
+            logits_trunc = logits[:input_lengths[batch_itr], batch_itr]
+            extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
+
+            for t in range(T):
+                for s in range(S):
+                    grad[t, batch_itr, extended_symbols[s]] -= gamma[t, s] / logits_trunc[t, extended_symbols[s]]
+            
+        return grad
+
+    def gradient(self, out_grad: Tensor, node: Tensor):
+        pass
+
+def ctc_loss_gradient(
+        gammas, logits, target, input_lengths, 
+        target_lengths, blank=0, reduction="mean"
+    ):
+    return CTCLossGradient(
+        blank, reduction
+    )(gammas, logits, target, input_lengths, target_lengths)
 
 # Author: Qingzheng Wang
