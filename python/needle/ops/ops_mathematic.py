@@ -6,7 +6,7 @@ from typing import Optional, List, Tuple, Union
 from ..autograd import NDArray
 from ..autograd import Op, Tensor, Value, TensorOp
 from ..autograd import TensorTuple, TensorTupleOp
-import numpy
+import numpy as np
 
 # NOTE: we will import numpy as the array_api
 # as the backend for our computations, this line will change in later homeworks
@@ -733,15 +733,17 @@ class CTC:
                       skip connections
         ex: [0,0,0,1,0,0,0,1,0]
         """
-        extended_symbols = [self.blank]
-        for symbol in target:
-            extended_symbols.append(symbol)
-            extended_symbols.append(self.blank)
+        extended_symbols = array_api.full((2 * len(target) + 1, ), self.blank, device=target.device)
+        for i in range(len(target)):
+            print(f"extending [{i} / {len(target)}]")
+            extended_symbols[2 * i + 1] = target[i]
 
+        print(f"extended_symbols: {extended_symbols}")
         N = len(extended_symbols)
 
         skip_connect = [0] * N
         for i in range(2, N):
+            print(f"skip connecting [{i} / {N}]")
             if extended_symbols[i] != self.blank and extended_symbols[i] != extended_symbols[i-2]:
                 skip_connect[i] = 1
 
@@ -892,7 +894,7 @@ class CTCLoss(TensorOp):
         """
 
         B, _ = target.shape
-        total_loss = array_api.full((B), 0, dtype="float32", device=logits.device)
+        total_loss = array_api.full((B, ), 0, dtype="float32", device=logits.device)
         extended_symbols_list = []
         gammas = []
 
