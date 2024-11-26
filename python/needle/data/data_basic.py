@@ -49,11 +49,13 @@ class DataLoader:
         dataset: Dataset,
         batch_size: Optional[int] = 1,
         shuffle: bool = False,
+        collate_fn=None
     ):
 
         self.dataset = dataset
         self.shuffle = shuffle
         self.batch_size = batch_size
+        self.collate_fn = collate_fn if collate_fn is not None else self.collate_fn
         if not self.shuffle:
             self.ordering = np.array_split(np.arange(len(dataset)), 
                                            range(batch_size, len(dataset), batch_size))
@@ -75,10 +77,20 @@ class DataLoader:
             raise StopIteration
         data = [self.dataset[idx] for idx in self.ordering[self.index]]
         self.index += 1
+
         # data may contain multiple kinds of data (images, labels) or only one
         # kind without labels
-        batch = tuple(Tensor(np.stack(x)) for x in zip(*data)) # must return a batch with requires_grad=True, Tensor default this. 
-        return batch
+        #
+        # FIX @2024/11/25: transfer np.ndarray to collate_fn, the collate_fn transfer 
+        # np.ndarray to Tensor this is for the ASR dataset, which needs to pad features, 
+        # but Tensor cannot be getitem or setitem, so we must give the collate_fn the 
+        # np.ndarray, so the collate_fn could use first pad then transfer to Tensor. 
+        batch = tuple(np.stack(x) for x in zip(*data))
+        return self.collate_fn(batch)
         ### END YOUR SOLUTION
+    
+    # default collate_fn, no collation
+    def collate_fn(self, batch):
+        return tuple(Tensor(x) for x in batch)
 
 # Author: Qingzheng Wang
