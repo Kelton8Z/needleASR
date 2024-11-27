@@ -59,7 +59,7 @@ train_config = {
 }
 
 run = wandb.init(
-    name = "transformer with reduceLRscheduling", ## Wandb creates random run names if you skip this field
+    name = "transformer with CTC", ## Wandb creates random run names if you skip this field
     reinit = True, ### Allows reinitalizing runs when you re-run this cell
     # run_id = ### Insert specific run id here if you want to resume a previous run
     # resume = "must" ### You need this to resume previous runs, but comment out reinit = True when using this
@@ -108,12 +108,12 @@ val_data = ASRDataset(dir, "dev")
 test_data = ASRDataset(dir, "test")
 
 # Do NOT forget to pass in the collate function as parameter while creating the dataloader
-train_loader = torch.utils.data.DataLoader(train_data, batch_size=train_config['batch_size'], pin_memory= True, collate_fn=train_data.collate_fn)
+train_loader = ndl.data.DataLoader(train_data, batch_size=train_config['batch_size'], collate_fn=train_data.collate_fn)
 
-val_loader = torch.utils.data.DataLoader(val_data, batch_size=train_config['batch_size'], pin_memory= True,
+val_loader = ndl.data.DataLoader(val_data, batch_size=train_config['batch_size'],
                                          shuffle= False, collate_fn=val_data.collate_fn)
 
-test_loader = torch.utils.data.DataLoader(test_data, batch_size=train_config['batch_size'], pin_memory= True,
+test_loader = ndl.data.DataLoader(test_data, batch_size=train_config['batch_size'],
                                          shuffle= False, collate_fn=test_data.collate_fn)
 
 
@@ -129,9 +129,9 @@ test_loader = torch.utils.data.DataLoader(test_data, batch_size=train_config['ba
 #                                           shuffle= False, collate_fn=test_collate)
 
 print("Batch size: ", train_config['batch_size'])
-print("Train dataset samples = {}, batches = {}".format(train_data.__len__(), len(train_loader)))
-print("Val dataset samples = {}, batches = {}".format(val_data.__len__(), len(val_loader)))
-print("Test dataset samples = {}, batches = {}".format(test_data.__len__(), len(test_loader)))
+print("Train dataset samples = {}, batches = {}".format(len(train_data), len(train_loader.dataset)))
+print("Val dataset samples = {}, batches = {}".format(len(val_data), len(val_loader.dataset)))
+print("Test dataset samples = {}, batches = {}".format(len(test_data), len(test_loader.dataset)))
 
 # sanity check
 for data in train_loader:
