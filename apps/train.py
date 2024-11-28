@@ -85,7 +85,7 @@ print("Train dataset samples = {}, batches = {}".format(len(train_data), len(tra
 print("Val dataset samples = {}, batches = {}".format(len(val_data), len(val_loader.dataset)))
 print("Test dataset samples = {}, batches = {}".format(len(test_data), len(test_loader.dataset)))
 
-# sanity check
+# Sanity check: data loader
 for data in train_loader:
     x, y, lx, ly = data
     feat_seq_len = x.shape[1]
@@ -93,7 +93,44 @@ for data in train_loader:
     print(f"feat_seq_len: {feat_seq_len}")
     break 
 
-model = nn.Transformer(
+class ASRModel(nn.Module):
+    def __init__(
+        self, 
+        embedding_size, 
+        hidden_size, 
+        num_layers, 
+        num_head, 
+        dim_head, 
+        dropout, 
+        causal, 
+        device, 
+        dtype, 
+        batch_first, 
+        sequence_len, 
+        vocal_size=OUT_SIZE
+    ):
+        self.encoder = nn.Transformer(
+            embedding_size=input_dim, 
+            hidden_size=hidden_size, 
+            num_layers=num_layers, 
+            num_head=num_head, 
+            dim_head=dim_head, 
+            dropout=dropout, 
+            causal=causal, 
+            device=device, 
+            dtype=dtype, 
+            batch_first=batch_first, 
+            sequence_len=sequence_len
+        )
+        self.linear = nn.Linear(input_dim, vocal_size)
+        
+    def forward(self, x):
+        x, _ = self.encoder(x)
+        x = self.linear(x)
+        return x
+
+
+model = ASRModel(
     embedding_size=input_dim, 
     hidden_size=hidden_size, 
     num_layers=num_layers, 
@@ -104,7 +141,8 @@ model = nn.Transformer(
     device=device, 
     dtype="float32", 
     batch_first=True, 
-    sequence_len=feat_seq_len
+    sequence_len=feat_seq_len, 
+    vocal_size=OUT_SIZE
 )
 criterion = CTCLoss()
 optimizer =  ndl.optim.Adam(model.parameters(), lr=train_config["learning_rate"])
@@ -140,7 +178,7 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
 
     return distance
 
-# Sanity check
+# Sanity check: model forward pass
 for i, data in enumerate(train_loader):
 
     x, y, len_x, len_y = data
@@ -149,13 +187,22 @@ for i, data in enumerate(train_loader):
     print(f"len_x shape: {len_x.shape}")
     print(f"len_y shape: {len_y.shape}")
 
-    x, y = x.to(device), y.to(device)
+    x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
     print(f"x device: {x.device}")
     print(f"y device: {y.device}")
 
-    output, _ = model(x)
+    output = model(x)
+    output = nn.ops.logsoftmax(output)
     print(f"output shape: {output.shape}")
 
+    print(f"output device: {output.device}")
+    print(f"y device: {y.device}")
+    print(f"len_x device: {len_x.device}")
+    print(f"len_y device: {len_y.device}")
+    print(f"output: {output}")
+    print(f"y: {y}")
+    print(f"len_x: {len_x}")
+    print(f"len_y: {len_y}")
     loss = criterion(output, y, len_x, len_y)
     print(f"loss: {loss}")
 
