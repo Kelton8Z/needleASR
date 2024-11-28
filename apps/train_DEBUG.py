@@ -11,7 +11,7 @@ from needle.nn.nn_ctcloss import CTCLoss
 from decoding import generate
 
 sys.path.append("python/")
-device = ndl.cpu()
+device = ndl.cuda()
 
 # import wandb
 # wandb.login(key=os.environ['WANDB_KEY'])
@@ -122,7 +122,7 @@ class ASRModel(nn.Module):
             batch_first=batch_first, 
             sequence_len=sequence_len
         )
-        self.linear = nn.Linear(input_dim, vocal_size)
+        self.linear = nn.Linear(input_dim, vocal_size, device=device, dtype=dtype)
         
     def forward(self, x):
         x, _ = self.encoder(x)
@@ -144,7 +144,8 @@ model = ASRModel(
     sequence_len=feat_seq_len, 
     vocal_size=OUT_SIZE
 )
-criterion = CTCLoss()
+
+criterion = CTCLoss(batch_first=True)
 optimizer =  ndl.optim.Adam(model.parameters(), lr=train_config["learning_rate"])
 
 def calculate_levenshtein(h, y, lh, ly, labels, debug=False):

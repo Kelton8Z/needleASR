@@ -856,7 +856,8 @@ class CTC:
 
 
 class CTCLoss(TensorOp):
-    def __init__(self, blank=0.0, reduction="mean"):
+    def __init__(self, batch_first=False, blank=0.0, reduction="mean"):
+        self.batch_first = batch_first
         self.blank = blank
         self.reduction = reduction
         self.ctc = CTC(blank)
@@ -888,7 +889,9 @@ class CTCLoss(TensorOp):
             avg. divergence between the posterior probability and the target
 
         """
-
+        if self.batch_first:
+            logits = logits.permute((1, 0))
+        
         B, _ = target.shape
         total_loss = array_api.full((B, ), 0, dtype="float32", device=logits.device)
         extended_symbols_list = []
@@ -905,14 +908,25 @@ class CTCLoss(TensorOp):
             #     Compute posteriors using total probability function
             #     Compute expected divergence for each batch and store it in totalLoss
             #     Take an average over all batches and return final result
-
+            print(f"Batch {batch_itr}")
             target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
             logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
 
+            print(f"Target Truncated: {target_trunc}")
+            print(f"Target Truncated Shape: {target_trunc.shape}")
+            print(f"Logits Truncated: {logits_trunc}")
+            print(f"Logits Truncated Shape: {logits_trunc.shape}")
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
+            print(f"Extended Symbols: {extended_symbols}")
             alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
+            print(f"Alpha: {alpha}")
+            print(f"Alpha Shape: {alpha.shape}")
             beta = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
+            print(f"Beta: {beta}")
+            print(f"Beta Shape: {beta.shape}")
             gamma = self.ctc.get_posterior_probs(alpha, beta)
+            print(f"Gamma: {gamma}")
+            print(f"Gamma Shape: {gamma.shape}")
             extended_symbols_list.append(extended_symbols)
 
             T = gamma.shape[0]
@@ -935,6 +949,8 @@ class CTCLoss(TensorOp):
 
     def gradient(self, out_grad: Tensor, node: Tensor):
         logits, target, input_lengths, target_lengths = node.inputs
+        if self.batch_first:
+            logits = logits.transpose((1, 0))
 
         grad = ctc_loss_gradient(
             logits, target, input_lengths, target_lengths, self.blank, self.reduction
@@ -942,8 +958,8 @@ class CTCLoss(TensorOp):
 
         return out_grad.reshape((1, ) * len(grad.shape)).broadcast_to(grad.shape) * grad
 
-def ctc_loss(logits, target, input_lengths, target_lengths, blank, reduction):
-    return CTCLoss(blank, reduction)(logits, target, input_lengths, target_lengths)
+def ctc_loss(logits, target, input_lengths, target_lengths, batch_first, blank, reduction):
+    return CTCLoss(batch_first, blank, reduction)(logits, target, input_lengths, target_lengths)
 
 class CTCLossGradient(TensorOp):
     """ CTC Loss backward operator

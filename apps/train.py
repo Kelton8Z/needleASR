@@ -11,7 +11,7 @@ from needle.nn.nn_ctcloss import CTCLoss
 from decoding import generate
 
 sys.path.append("python/")
-device = ndl.cpu()
+device = ndl.cuda()
 
 # import wandb
 # wandb.login(key=os.environ['WANDB_KEY'])

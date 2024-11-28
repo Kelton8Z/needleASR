@@ -397,8 +397,12 @@ class Transformer(Module):
         positional_embedding = self.positional_encoder(time_ids) # (seq_len, batch_size, embedding_size)
         positional_embedding = positional_embedding.transpose((0, 1))
 
+        print(f"positional_embedding shape: {positional_embedding.shape}")
         x = x + positional_embedding
+        print("transformer forward 1")
         x = self.transformer(x)
+        print("transformer forward 2")
+        print(f"x shape: {x.shape}")
         ### END YOUR SOLUTION
 
         if not self.batch_first:
