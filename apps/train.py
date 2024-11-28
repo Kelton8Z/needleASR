@@ -2,6 +2,7 @@ import gc
 import os
 import Levenshtein
 import sys
+sys.path.append("python/")
 import needle as ndl
 import needle.nn as nn
 
@@ -10,7 +11,6 @@ from needle.data.datasets.librispeech_dataset import ASRDataset
 from needle.nn.nn_ctcloss import CTCLoss
 from decoding import generate
 
-sys.path.append("python/")
 device = ndl.cuda()
 
 # import wandb
