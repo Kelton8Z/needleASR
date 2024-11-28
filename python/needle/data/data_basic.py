@@ -84,9 +84,16 @@ class DataLoader:
         # FIX @2024/11/25: transfer np.ndarray to collate_fn, the collate_fn transfer 
         # np.ndarray to Tensor this is for the ASR dataset, which needs to pad features, 
         # but Tensor cannot be getitem or setitem, so we must give the collate_fn the 
-        # np.ndarray, so the collate_fn could use first pad then transfer to Tensor. 
-        batch = tuple(np.stack(x) for x in zip(*data))
-        return self.collate_fn(batch)
+        # np.ndarray, so the collate_fn could use first pad then transfer to Tensor.
+
+        # batch = tuple(np.stack(x) for x in zip(*data))
+        # print(f"data: {data}")
+        # print(f"data[0]: {data[0]}")
+        # print(f"len(data): {len(data)}")
+        # print(f"data[0][0] shape: {data[0][0].shape}")
+        # print(f"data[0][1] shape: {data[0][1].shape}")
+
+        return self.collate_fn()
         ### END YOUR SOLUTION
     
     # default collate_fn, no collation
