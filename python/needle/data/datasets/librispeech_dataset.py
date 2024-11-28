@@ -4,6 +4,7 @@ from needle import Tensor, NDArray
 import os
 import sys
 import librosa
+from tqdm import tqdm
 import numpy as np
 sys.path.append('./python')
 
@@ -60,30 +61,21 @@ class ASRDataset(Dataset):
         ):
         self.dataset_dir = os.path.join(base_dir, dataset_type)
         self.dataset_type = dataset_type
-        self.flac_list = self.get_flac_list()
-        self.transcripts = self.get_transcripts()
+        self.flac_list = self.get_flac_list() # list of flac file paths
+        self.transcripts = self.get_transcripts() # list of transcripts, each corresponding to the flac in the same position in the flac list
         self.feat_type = feat_type
         self.feat_dim = feat_dim
         self.tokenizer = CharTokenizer()
+
+        self.feats = [self.get_feat(flac, feat_type, feat_dim) for flac in tqdm(self.flac_list, desc="feat init")]
+        self.transcript_tokens = [self.get_transcript_token(transcript) for transcript in tqdm(self.transcripts, desc="transcript init")]
+
+        self.max_len_feat = max([len(feat) for feat in self.feats])
+        self.max_len_transcript = max([len(transcript) for transcript in self.transcript_tokens])
     
     def __getitem__(self, index):
-        flac_path = self.flac_list[index]
-        y, sr = soundfile.read(flac_path)
-        feat = self.get_feat(y, sr, self.feat_type, self.feat_dim)
-        # TODO: 
-        #   Don't forget to ".to(device)" in the train script, 
-        #   since here we don't know the device type
-        feat = np.array(feat)
-        feat = feat.transpose((0, 1)) # (T, feat_dim)
-
-        key = flac_path.split('/')[-1].split('.')[0]
-        transcript = self.transcripts[key]
-        transcript_tokens = self.tokenizer.encode(transcript)
-        transcript_tokens = np.array(transcript_tokens)
-
-        # feat: np.ndarray (T, feat_dim), transcript_tokens: np.ndarray (L,)
-        # NOTE: feat and transcript_tokens will be transformed to Tensor in dataloader __next__
-        return feat, transcript_tokens 
+        
+        return self.feats[index], self.transcript_tokens[index]
 
     def __len__(self):
         assert len(self.flac_list) == len(self.transcripts), (
@@ -100,6 +92,7 @@ class ASRDataset(Dataset):
                 if file.endswith('.flac'):
                     flac_list.append(os.path.join(root, file))
         
+        flac_list = sorted(flac_list)
         with open(os.path.join(self.dataset_dir, 'flac_list.txt'), 'w') as f:
             for flac in flac_list:
                 f.write(f'{flac}\n')
@@ -127,49 +120,65 @@ class ASRDataset(Dataset):
                     if len(parts) == 2:
                         transcripts[parts[0]] = parts[1]
         
+        transcripts = dict(sorted(transcripts.items(), key=lambda x: x[0]))
+        transcripts = list(transcripts.values())
         with open(os.path.join(self.dataset_dir, 'transcripts.txt'), 'w') as f:
-            for key, val in transcripts.items():
-                f.write(f'{key} {val}\n')
+            for transcript in transcripts:
+                f.write(f'{transcript}\n')
         
         return transcripts
     
-    def get_feat(self, y, sr, feat_type, feat_dim):
+    def get_feat(self, flac_path, feat_type, feat_dim):
         # use external library to extract features
         # use librosa
+        y, sr = soundfile.read(flac_path)
         if feat_type == "fbank":
             feat = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=feat_dim)
+            feat = feat.transpose((1, 0))
         elif feat_type == "mfcc":
             feat = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=feat_dim)
         else:
             raise ValueError(f"Unsupported feature type: {feat_type}")
         
         return feat
+    
+    def get_transcript_token(self, transcript):
+        transcript_token = self.tokenizer.encode(transcript)
+        transcript_token = np.array(transcript_token)
 
-    def collate_fn(batch):
+        return transcript_token
+
+    def collate_fn(self, batch):
         # pad feats in batch to same length
         # NOTE: there is no need to pad transcripts, since we use CTC-based ASR, 
         # where only exists encoder, no language model decoder based on transcripts. 
         # transcripts only serve as targets for CTC loss. 
         
         # the feat and transcript_tokens in batch input are all np.ndarray
-        max_len = max([len(feat) for feat, _ in batch])
+
         batch_feats = [x[0] for x in batch]
         feats_lengths = [x.shape[0] for x in batch_feats]
+        batch_transcripts = [x[1] for x in batch]
+        transcript_lengths = [len(x) for x in batch_transcripts]
+
         feats_lengths = np.array(feats_lengths) # (B, )
-        padded_feats = np.zeros((len(batch), max_len, batch_feats[0].shape[1]))
+        transcript_lengths = np.array(transcript_lengths) # (B, )
+
+        padded_feats = np.zeros((len(batch), self.max_len_feat, batch_feats[0].shape[1]))
+        padded_transcripts = np.zeros((len(batch), self.max_len_transcript))
 
         for i, feat in enumerate(batch_feats):
             padded_feats[i, :feats_lengths[i]] = feat
+            padded_transcripts[i, :transcript_lengths[i]] = batch_transcripts[i]
         
         padded_feats = Tensor(padded_feats) # TODO: .to(device) in train script
         feats_lengths = Tensor(feats_lengths, requires_grad=False)
+        padded_transcripts = Tensor(padded_transcripts, requires_grad=False)
+        transcript_lengths = Tensor(transcript_lengths, requires_grad=False)
 
-        trancript_tokens = Tensor(np.array([x[1] for x in batch]), requires_grad=False) # (B, L)
-        transcript_lengths = Tensor(np.array([len(x) for x in trancript_tokens]), requires_grad=False) # (B, )
-
-        # padded_feats: Tensor (B, T, feat_dim), trancript_tokens: Tensor (B, L)
+        # padded_feats: Tensor (B, T, feat_dim), padded_transcripts: Tensor (B, L)
         # feats_lengths: Tensor (B, ), transcript_lengths: Tensor (B, )
-        return padded_feats, trancript_tokens, feats_lengths, transcript_lengths
+        return padded_feats, padded_transcripts, feats_lengths, transcript_lengths
 
 
 

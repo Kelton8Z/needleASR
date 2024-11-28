@@ -360,6 +360,15 @@ class Tensor(Value):
     def transpose(self, axes=None):
         return needle.ops.Transpose(axes)(self)
 
+    def to(self, device):
+        if self.device == device:
+            return self
+        else:
+            return Tensor(
+                self.realize_cached_data(), 
+                device=device, dtype=self.dtype, 
+                requires_grad=self.requires_grad
+            )
 
 
 

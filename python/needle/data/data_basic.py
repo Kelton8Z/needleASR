@@ -86,7 +86,7 @@ class DataLoader:
         # but Tensor cannot be getitem or setitem, so we must give the collate_fn the 
         # np.ndarray, so the collate_fn could use first pad then transfer to Tensor.
 
-        return self.collate_fn()
+        return self.collate_fn(data)
         ### END YOUR SOLUTION
     
     # default collate_fn, no collation
