@@ -159,7 +159,7 @@ class ASRDataset(Dataset):
         padded_feats = np.zeros((len(batch), max_len, batch_feats[0].shape[1]))
 
         for i, feat in enumerate(batch_feats):
-            padded_feats[i, :len(feats_lengths[i])] = feat
+            padded_feats[i, :feats_lengths[i]] = feat
         
         padded_feats = Tensor(padded_feats) # TODO: .to(device) in train script
         feats_lengths = Tensor(feats_lengths, requires_grad=False)
