@@ -753,203 +753,143 @@ class CTC:
 
         return extended_symbols, skip_connect
       
-    def logsumexp(self, a, b, line=None):
-        # Stable log sum exp
-        a_inf = b_inf = False
-        if a == float('-inf'):
-            print(f"a inf {line}")
-            a_inf = True
-            return b
-        if b == float('-inf'):
-            print(f"b inf {line}")
-            b_inf = True
-        if b_inf:   
-            return a
-        if a_inf:
-            return b
-
-        max_val = max(a, b)
-        return max_val + np.log(np.exp(a - max_val) + np.exp(b - max_val))
+    def logsumexp(self, a, b):
+        """Ultra-stable logsumexp"""
+        a_val = float(a.numpy() if hasattr(a, 'numpy') else a)
+        b_val = float(b.numpy() if hasattr(b, 'numpy') else b)
+        
+        if a_val == float('-inf'):
+            return b_val
+        if b_val == float('-inf'):
+            return a_val
+        
+        max_val = max(a_val, b_val)
+        min_val = min(a_val, b_val)
+        
+        # If values are too far apart, return the max
+        if max_val - min_val > 30:
+            return max_val
+        
+        return max_val + np.log1p(np.exp(min_val - max_val))
 
     def get_forward_probs(self, logits, extended_symbols, skip_connect):
-        """Compute forward probabilities.
-
-        Input
-        -----
-        logits: (NDArray, dim = (input_len, len(Symbols)))
-                predict (log) probabilities
-
-                To get a certain symbol i's logit as a certain time stamp t:
-                p(t,s(i)) = logits[t, qextSymbols[i]]
-
-        extended_symbols: (NDArray, dim = (2 * target_len + 1,))
-                          extended label sequence with blanks
-
-        skip_connect: (NDArray, dim = (2 * target_len + 1,))
-                      skip connections
-
-        Return
-        ------
-        alpha: (NDArray, dim = (input_len, 2 * target_len + 1))
-                forward probabilities
-        """
-
-        assert not any(map(lambda x: x!=x, logits.numpy().flatten())), "logits contain NaN values"
-        assert not any(map(lambda x: x in [float('inf'), -float('inf')], logits.numpy().flatten())), "logits contain inf values"
         S, T = len(extended_symbols), len(logits)
-        alpha = array_api.full((T, S), 0, dtype="float32", device=logits.device)
-
-        alpha[0, 0] = logits[0, int(extended_symbols[0].numpy())]
+        alpha = array_api.full((T, S), float('-inf'), dtype="float32", device=logits.device)
+        
+        # Initialize with normalized logits
+        first_logit = logits[0, int(extended_symbols[0].numpy())]
+        alpha[0, 0] = first_logit
         if S > 1:
             alpha[0, 1] = logits[0, int(extended_symbols[1].numpy())]
 
-        # for t in range(1, T):
-        t = 0
-        while t < T and not any(map(lambda x: x!=x, alpha.numpy().flatten())):
-            t += 1
-            alpha[t, 0] = alpha[t-1, 0] + logits[t, int(extended_symbols[0].numpy())]
-            # for i in range(1, S):
-            #     alpha[t, i] = alpha[t-1, i] + alpha[t-1, i-1]
-            #     if float(skip_connect[i].numpy()):
-            #         alpha[t, i] = alpha[t, i] + alpha[t-1, i-2]
-            #     alpha[t, i] = alpha[t, i] * logits[t, int(extended_symbols[i].numpy())]
-            #     if alpha[t, i]!=alpha[t, i]:
-            #         print(f'{t} outta {T}, {i} outta {S}')
-            #         break
-            breaking = False
-            for i in range(1, S):
-                prev = alpha[t, i]
-                alpha[t, i] = self.logsumexp(alpha[t-1, i], alpha[t-1, i-1], "822")
-                # print(f"\nStep {i}:")
-                # print(f"alpha[{t-1}, {i}] = {alpha[t-1, i]}")
-                # print(f"alpha[{t-1}, {i-1}] = {alpha[t-1, i-1]}")
-                # print(f"Sum = {alpha[t, i]}")
-                
-                if float(skip_connect[i].numpy()):
-                    before_skip = alpha[t, i]
-                    alpha[t, i] = self.logsumexp(alpha[t, i], alpha[t-1, i-2], "830")
-                    # print(f"Skip connection added: {alpha[t-1, i-2]}")
-                    # print(f"Result after skip: {alpha[t, i]}")
-                    
-                alpha[t, i] = alpha[t, i] + logits[t, int(extended_symbols[i].numpy())]
-                # print(f"Final multiply with logit[{t}, {extended_symbols[i]}] = {logits[t, int(extended_symbols[i].numpy())]}")
-                # print(f"Final result = {alpha[t, i]}")
-                
-                if alpha[t, i]!=alpha[t, i]:
-                    print(f'{t} outta {T}, {i} outta {S} -> {alpha[t, i]}')
-                    breaking = True
-                    break
+        # Keep track of scaling factors
+        scale = array_api.full((T, ), 0, dtype="float32", device=logits.device)
 
-            if breaking:
-                break
-        return alpha
+        for t in range(1, T):
+            # Current emissions
+            for i in range(S):
+                if i == 0:
+                    alpha[t, 0] = alpha[t-1, 0] + logits[t, int(extended_symbols[0].numpy())]
+                    continue
+                    
+                curr = float('-inf')
+                log_emit = logits[t, int(extended_symbols[i].numpy())]
+                
+                # Standard transition
+                if alpha[t-1, i-1] > float('-inf'):
+                    curr = alpha[t-1, i-1]
+                
+                # Stay transition
+                if alpha[t-1, i] > float('-inf'):
+                    curr = self.logsumexp(curr, alpha[t-1, i])
+                
+                # Skip connection
+                if float(skip_connect[i].numpy()) and i >= 2:
+                    if alpha[t-1, i-2] > float('-inf'):
+                        curr = self.logsumexp(curr, alpha[t-1, i-2])
+                
+                if curr > float('-inf'):
+                    alpha[t, i] = curr + log_emit
+
+            # Normalize every timestep
+            max_val = float(alpha[t].max().numpy())
+            if max_val != float('-inf'):
+                alpha[t] = alpha[t] - max_val
+                scale[t] = max_val
+        
+        return alpha, scale
 
     def get_backward_probs(self, logits, extended_symbols, skip_connect):
-        """Compute backward probabilities.
-
-        Input
-        -----
-        logits: (NDArray, dim = (input_len, len(symbols)))
-                predict (log) probabilities
-
-        extended_symbols: (NDArray, dim = (2 * target_len + 1,))
-                          extended label sequence with blanks
-
-        skip_connect: (NDArray, dim = (2 * target_len + 1,))
-                      skip connections
-
-        Return
-        ------
-        beta: (NDArray, dim = (input_len, 2 * target_len + 1))
-                backward probabilities
-        """
         S, T = len(extended_symbols), len(logits)
-        beta = array_api.full((T, S), 0, dtype="float32", device=logits.device)
+        beta = array_api.full((T, S), float('-inf'), dtype="float32", device=logits.device)
         
-        # Add debug prints for initial values
-        print(f"Initial beta[T-1, S-1] = {logits[T-1, int(extended_symbols[S-1].numpy())]}")
-        beta[T-1, S-1] = logits[T-1, int(extended_symbols[S-1].numpy())]
-        
+        # Initialize normalized
+        beta[T-1, S-1] = 0
         if S > 1:
-            print(f"Initial beta[T-1, S-2] = {logits[T-1, int(extended_symbols[S-2].numpy())]}")
-            beta[T-1, S-2] = logits[T-1, int(extended_symbols[S-2].numpy())]
-        
-        for t in reversed(range(T-1)):
-            beta[t, S-1] = beta[t+1, S-1] + logits[t, int(extended_symbols[S-1].numpy())]
-            print(f"At t={t}, beta[t, S-1] = {beta[t, S-1]}")
-            
-            for i in reversed(range(S-1)):
-                # Print values before operations
-                print(f"\nAt t={t}, i={i}:")
-                print(f"beta[t+1, i] = {beta[t+1, i]}")
-                print(f"beta[t+1, i+1] = {beta[t+1, i+1]}")
-                
-                beta[t, i] = beta[t+1, i] + beta[t+1, i+1]
-                print(f"After first addition: beta[t, i] = {beta[t, i]}")
-                
-                if i < S-2 and float(skip_connect[i+2].numpy()):
-                    print(f"beta[t+1, i+2] = {beta[t+1, i+2]}")
-                    before_skip = beta[t, i]
-                    beta[t, i] = self.logsumexp(beta[t, i], beta[t+1, i+2], line="879")
-                    print(f"After logsumexp: beta[t, i] changed from {before_skip} to {beta[t, i]}")
-                    
-                    current_logit = logits[t, int(extended_symbols[i].numpy())]
-                    print(f"Adding logit: {current_logit}")
-                    beta[t, i] += current_logit
-                    print(f"Final beta[t, i] = {beta[t, i]}")
-                    
-                    if beta[t, i] == float('inf'):
-                        print("!!! OVERFLOW DETECTED !!!")
-                        print(f"Previous beta: {before_skip}")
-                        print(f"Skip connection value: {beta[t+1, i+2]}")
-                        print(f"Current logit: {current_logit}")
-                        return beta
+            beta[T-1, S-2] = 0
 
-        return beta
-        #         assert not any(map(lambda x: x in [float('inf'), -float('inf')], logits.numpy().flatten())), "logits contain inf values"
-        S, T = len(extended_symbols), len(logits)
-        beta = array_api.full((T, S), 0, dtype="float32", device=logits.device)
-
-        beta[T-1, S-1] = logits[T-1, int(extended_symbols[S-1].numpy())]
-        if S > 1:
-            beta[T-1, S-2] = logits[T-1, int(extended_symbols[S-2].numpy())]
+        # Keep track of scaling factors
+        scale = array_api.zeros((T,), dtype="float32", device=logits.device)
 
         for t in reversed(range(T-1)):
-            beta[t, S-1] = beta[t+1, S-1] + logits[t, int(extended_symbols[S-1].numpy())]
-            for i in reversed(range(S-1)):
-                beta[t, i] = beta[t+1, i] + beta[t+1, i+1]
-                if i < S-2 and float(skip_connect[i+2].numpy()):
-                    beta[t, i] = self.logsumexp(beta[t, i], beta[t+1, i+2], line="879")
-                beta[t, i] += logits[t, int(extended_symbols[i].numpy())]
-
-        for t in reversed(range(T)):
             for i in reversed(range(S)):
-                beta[t, i] -= logits[t, int(extended_symbols[i].numpy())]
+                if i == S-1:
+                    beta[t, S-1] = beta[t+1, S-1] + logits[t, int(extended_symbols[S-1].numpy())]
+                    continue
+                    
+                curr = float('-inf')
+                log_emit = logits[t, int(extended_symbols[i].numpy())]
+                
+                # Standard transitions
+                if beta[t+1, i] > float('-inf'):
+                    curr = beta[t+1, i]
+                if beta[t+1, i+1] > float('-inf'):
+                    curr = self.logsumexp(curr, beta[t+1, i+1])
+                
+                # Skip connection
+                if i < S-2 and float(skip_connect[i+2].numpy()):
+                    if beta[t+1, i+2] > float('-inf'):
+                        curr = self.logsumexp(curr, beta[t+1, i+2])
+                
+                if curr > float('-inf'):
+                    beta[t, i] = curr + log_emit
 
-        return beta
+            # Normalize every timestep
+            max_val = float(beta[t].max().numpy())
+            if max_val != float('-inf'):
+                beta[t] = beta[t] - max_val
+                scale[t] = max_val
+
+        return beta, scale
 
     def get_posterior_probs(self, alpha, beta):
-        """Compute posterior probabilities.
-
-        Input
-        -----
-        alpha: (NDArray, dim = (input_len, 2 * target_len + 1))
-                forward probability
-
-        beta: (NDArray, dim = (input_len, 2 * target_len + 1))
-                backward probability
-
-        Return
-        ------
-        gamma: (NDArray, dim = (input_len, 2 * target_len + 1))
-                posterior probability
-        """
         T, S = alpha.shape
         gamma = array_api.full((T, S), 0, dtype="float32", device=alpha.device)
-
+        
         for t in range(T):
-            sum_gamma = float((alpha[t, :] * beta[t, :]).sum(axis=1).numpy())
-            gamma[t, :] = (alpha[t, :] * beta[t, :]) / sum_gamma
+            # Find valid positions and max value for numerical stability
+            max_val = float('-inf')
+            valid_pos = []
+            
+            for s in range(S):
+                if alpha[t, s] > float('-inf') and beta[t, s] > float('-inf'):
+                    curr_val = alpha[t, s] + beta[t, s]
+                    max_val = max(max_val, curr_val)
+                    valid_pos.append((s, curr_val))
+            
+            if not valid_pos:
+                continue
+                
+            # Compute normalized probabilities
+            sum_exp = 0.0
+            for s, val in valid_pos:
+                sum_exp += np.exp(val - max_val)
+                
+            log_sum = max_val + np.log(sum_exp)
+            
+            # Set probabilities
+            for s, val in valid_pos:
+                gamma[t, s] = np.exp(val - log_sum)
         
         return gamma
 
@@ -1011,12 +951,12 @@ class CTCLoss(TensorOp):
             target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
             logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
 
-            print(f"Target Truncated: {target_trunc}")
-            print(f"Target Truncated Shape: {target_trunc.shape}")
-            print(f"Logits Truncated: {logits_trunc}")
-            print(f"Logits Truncated Shape: {logits_trunc.shape}")
+            # print(f"Target Truncated: {target_trunc}")
+            # print(f"Target Truncated Shape: {target_trunc.shape}")
+            # print(f"Logits Truncated: {logits_trunc}")
+            # print(f"Logits Truncated Shape: {logits_trunc.shape}")
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
-            print(f"Extended Symbols: {extended_symbols}")
+            # print(f"Extended Symbols: {extended_symbols}")
             alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
             assert not any(map(lambda x: x!=x, alpha.numpy().flatten())), "alpha contain NaN values"
             print(f"Alpha: {alpha}")
