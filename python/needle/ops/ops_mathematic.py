@@ -8,6 +8,10 @@ from ..autograd import Op, Tensor, Value, TensorOp
 from ..autograd import TensorTuple, TensorTupleOp
 import numpy as np
 
+import sys
+sys.path.append("python/")
+import needle as ndl
+
 # NOTE: we will import numpy as the array_api
 # as the backend for our computations, this line will change in later homeworks
 
@@ -748,6 +752,24 @@ class CTC:
         skip_connect = array_api.array(skip_connect, device=target.device)
 
         return extended_symbols, skip_connect
+      
+    def logsumexp(self, a, b, line=None):
+        # Stable log sum exp
+        a_inf = b_inf = False
+        if a == float('-inf'):
+            print(f"a inf {line}")
+            a_inf = True
+            return b
+        if b == float('-inf'):
+            print(f"b inf {line}")
+            b_inf = True
+        if b_inf:   
+            return a
+        if a_inf:
+            return b
+
+        max_val = max(a, b)
+        return max_val + np.log(np.exp(a - max_val) + np.exp(b - max_val))
 
     def get_forward_probs(self, logits, extended_symbols, skip_connect):
         """Compute forward probabilities.
@@ -772,6 +794,8 @@ class CTC:
                 forward probabilities
         """
 
+        assert not any(map(lambda x: x!=x, logits.numpy().flatten())), "logits contain NaN values"
+        assert not any(map(lambda x: x in [float('inf'), -float('inf')], logits.numpy().flatten())), "logits contain inf values"
         S, T = len(extended_symbols), len(logits)
         alpha = array_api.full((T, S), 0, dtype="float32", device=logits.device)
 
@@ -779,14 +803,45 @@ class CTC:
         if S > 1:
             alpha[0, 1] = logits[0, int(extended_symbols[1].numpy())]
 
-        for t in range(1, T):
-            alpha[t, 0] = alpha[t-1, 0] * logits[t, int(extended_symbols[0].numpy())]
+        # for t in range(1, T):
+        t = 0
+        while t < T and not any(map(lambda x: x!=x, alpha.numpy().flatten())):
+            t += 1
+            alpha[t, 0] = alpha[t-1, 0] + logits[t, int(extended_symbols[0].numpy())]
+            # for i in range(1, S):
+            #     alpha[t, i] = alpha[t-1, i] + alpha[t-1, i-1]
+            #     if float(skip_connect[i].numpy()):
+            #         alpha[t, i] = alpha[t, i] + alpha[t-1, i-2]
+            #     alpha[t, i] = alpha[t, i] * logits[t, int(extended_symbols[i].numpy())]
+            #     if alpha[t, i]!=alpha[t, i]:
+            #         print(f'{t} outta {T}, {i} outta {S}')
+            #         break
+            breaking = False
             for i in range(1, S):
-                alpha[t, i] = alpha[t-1, i] + alpha[t-1, i-1]
+                prev = alpha[t, i]
+                alpha[t, i] = self.logsumexp(alpha[t-1, i], alpha[t-1, i-1], "822")
+                # print(f"\nStep {i}:")
+                # print(f"alpha[{t-1}, {i}] = {alpha[t-1, i]}")
+                # print(f"alpha[{t-1}, {i-1}] = {alpha[t-1, i-1]}")
+                # print(f"Sum = {alpha[t, i]}")
+                
                 if float(skip_connect[i].numpy()):
-                    alpha[t, i] = alpha[t, i] + alpha[t-1, i-2]
-                alpha[t, i] = alpha[t, i] * logits[t, int(extended_symbols[i].numpy())]
+                    before_skip = alpha[t, i]
+                    alpha[t, i] = self.logsumexp(alpha[t, i], alpha[t-1, i-2], "830")
+                    # print(f"Skip connection added: {alpha[t-1, i-2]}")
+                    # print(f"Result after skip: {alpha[t, i]}")
+                    
+                alpha[t, i] = alpha[t, i] + logits[t, int(extended_symbols[i].numpy())]
+                # print(f"Final multiply with logit[{t}, {extended_symbols[i]}] = {logits[t, int(extended_symbols[i].numpy())]}")
+                # print(f"Final result = {alpha[t, i]}")
+                
+                if alpha[t, i]!=alpha[t, i]:
+                    print(f'{t} outta {T}, {i} outta {S} -> {alpha[t, i]}')
+                    breaking = True
+                    break
 
+            if breaking:
+                break
         return alpha
 
     def get_backward_probs(self, logits, extended_symbols, skip_connect):
@@ -810,22 +865,66 @@ class CTC:
         """
         S, T = len(extended_symbols), len(logits)
         beta = array_api.full((T, S), 0, dtype="float32", device=logits.device)
+        
+        # Add debug prints for initial values
+        print(f"Initial beta[T-1, S-1] = {logits[T-1, int(extended_symbols[S-1].numpy())]}")
+        beta[T-1, S-1] = logits[T-1, int(extended_symbols[S-1].numpy())]
+        
+        if S > 1:
+            print(f"Initial beta[T-1, S-2] = {logits[T-1, int(extended_symbols[S-2].numpy())]}")
+            beta[T-1, S-2] = logits[T-1, int(extended_symbols[S-2].numpy())]
+        
+        for t in reversed(range(T-1)):
+            beta[t, S-1] = beta[t+1, S-1] + logits[t, int(extended_symbols[S-1].numpy())]
+            print(f"At t={t}, beta[t, S-1] = {beta[t, S-1]}")
+            
+            for i in reversed(range(S-1)):
+                # Print values before operations
+                print(f"\nAt t={t}, i={i}:")
+                print(f"beta[t+1, i] = {beta[t+1, i]}")
+                print(f"beta[t+1, i+1] = {beta[t+1, i+1]}")
+                
+                beta[t, i] = beta[t+1, i] + beta[t+1, i+1]
+                print(f"After first addition: beta[t, i] = {beta[t, i]}")
+                
+                if i < S-2 and float(skip_connect[i+2].numpy()):
+                    print(f"beta[t+1, i+2] = {beta[t+1, i+2]}")
+                    before_skip = beta[t, i]
+                    beta[t, i] = self.logsumexp(beta[t, i], beta[t+1, i+2], line="879")
+                    print(f"After logsumexp: beta[t, i] changed from {before_skip} to {beta[t, i]}")
+                    
+                    current_logit = logits[t, int(extended_symbols[i].numpy())]
+                    print(f"Adding logit: {current_logit}")
+                    beta[t, i] += current_logit
+                    print(f"Final beta[t, i] = {beta[t, i]}")
+                    
+                    if beta[t, i] == float('inf'):
+                        print("!!! OVERFLOW DETECTED !!!")
+                        print(f"Previous beta: {before_skip}")
+                        print(f"Skip connection value: {beta[t+1, i+2]}")
+                        print(f"Current logit: {current_logit}")
+                        return beta
+
+        return beta
+        #         assert not any(map(lambda x: x in [float('inf'), -float('inf')], logits.numpy().flatten())), "logits contain inf values"
+        S, T = len(extended_symbols), len(logits)
+        beta = array_api.full((T, S), 0, dtype="float32", device=logits.device)
 
         beta[T-1, S-1] = logits[T-1, int(extended_symbols[S-1].numpy())]
         if S > 1:
             beta[T-1, S-2] = logits[T-1, int(extended_symbols[S-2].numpy())]
 
         for t in reversed(range(T-1)):
-            beta[t, S-1] = beta[t+1, S-1] * logits[t, int(extended_symbols[S-1].numpy())]
+            beta[t, S-1] = beta[t+1, S-1] + logits[t, int(extended_symbols[S-1].numpy())]
             for i in reversed(range(S-1)):
                 beta[t, i] = beta[t+1, i] + beta[t+1, i+1]
                 if i < S-2 and float(skip_connect[i+2].numpy()):
-                    beta[t, i] += beta[t+1, i+2]
-                beta[t, i] *= logits[t, int(extended_symbols[i].numpy())]
+                    beta[t, i] = self.logsumexp(beta[t, i], beta[t+1, i+2], line="879")
+                beta[t, i] += logits[t, int(extended_symbols[i].numpy())]
 
         for t in reversed(range(T)):
             for i in reversed(range(S)):
-                beta[t, i] /= logits[t, int(extended_symbols[i].numpy())]
+                beta[t, i] -= logits[t, int(extended_symbols[i].numpy())]
 
         return beta
 
@@ -919,9 +1018,11 @@ class CTCLoss(TensorOp):
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
             print(f"Extended Symbols: {extended_symbols}")
             alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
+            assert not any(map(lambda x: x!=x, alpha.numpy().flatten())), "alpha contain NaN values"
             print(f"Alpha: {alpha}")
             print(f"Alpha Shape: {alpha.shape}")
             beta = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
+            assert not any(map(lambda x: x!=x, beta.numpy().flatten())), "beta contain NaN values"
             print(f"Beta: {beta}")
             print(f"Beta Shape: {beta.shape}")
             gamma = self.ctc.get_posterior_probs(alpha, beta)
