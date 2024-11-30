@@ -752,7 +752,7 @@ class CTC:
         skip_connect = array_api.array(skip_connect, device=target.device)
 
         return extended_symbols, skip_connect
-      
+
     def logsumexp(self, a, b):
         """Ultra-stable logsumexp"""
         a_val = float(a.numpy() if hasattr(a, 'numpy') else a)
@@ -928,8 +928,10 @@ class CTCLoss(TensorOp):
             avg. divergence between the posterior probability and the target
 
         """
+        print(f"logits shape before permut: {logits.shape}")
         if self.batch_first:
-            logits = logits.permute((1, 0))
+            logits = logits.permute((1, 0, 2))
+        print(f"logits shape after permut: {logits.shape}")
         
         B, _ = target.shape
         total_loss = array_api.full((B, ), 0, dtype="float32", device=logits.device)
@@ -948,15 +950,36 @@ class CTCLoss(TensorOp):
             #     Compute expected divergence for each batch and store it in totalLoss
             #     Take an average over all batches and return final result
             print(f"Batch {batch_itr}")
-            target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
-            logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
+            # print type of logits, target, input_lengths, target_lengths
+            print(f"Logits Type: {type(logits)}")
+            print(f"Target Type: {type(target)}")
+            print(f"Input Lengths Type: {type(input_lengths)}")
+            print(f"Target Lengths Type: {type(target_lengths)}")
 
-            # print(f"Target Truncated: {target_trunc}")
-            # print(f"Target Truncated Shape: {target_trunc.shape}")
-            # print(f"Logits Truncated: {logits_trunc}")
-            # print(f"Logits Truncated Shape: {logits_trunc.shape}")
+            # print shape of logits, target, input_lengths, target_lengths
+            print(f"Logits Shape: {logits.shape}")
+            print(f"Target Shape: {target.shape}")
+            print(f"Input Lengths Shape: {input_lengths.shape}")
+            print(f"Target Lengths Shape: {target_lengths.shape}")
+
+            # print device of logits, target, input_lengths, target_lengths
+            print(f"Logits Device: {logits.device}")
+            print(f"Target Device: {target.device}")
+            print(f"Input Lengths Device: {input_lengths.device}")
+            print(f"Target Lengths Device: {target_lengths.device}")
+
+            target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
+            logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr, :].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
+
+            print(f"Target Truncated: {target_trunc}")
+            print(f"Target Truncated Shape: {target_trunc.shape}")
+            print(f"Logits Truncated: {logits_trunc}")
+            print(f"Logits Truncated Shape: {logits_trunc.shape}")
+
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
-            # print(f"Extended Symbols: {extended_symbols}")
+
+            print(f"Extended Symbols: {extended_symbols}")
+
             alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
             assert not any(map(lambda x: x!=x, alpha.numpy().flatten())), "alpha contain NaN values"
             print(f"Alpha: {alpha}")
