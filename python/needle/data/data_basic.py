@@ -70,6 +70,9 @@ class DataLoader:
         self.index = 0
         ### END YOUR SOLUTION
         return self
+    
+    def __len__(self):
+        return len(self.dataset) // self.batch_size + 1 # don't drop the last batch
 
     def __next__(self):
         ### BEGIN YOUR SOLUTION
