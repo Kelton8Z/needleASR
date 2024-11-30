@@ -10,6 +10,7 @@ from tqdm import tqdm
 from needle.data.datasets.librispeech_dataset import ASRDataset
 from needle.nn.nn_ctcloss import CTCLoss
 from decoding import generate
+from needle.data.datasets.librispeech_dataset import CharTokenizer
 
 device = ndl.cuda()
 
@@ -26,7 +27,11 @@ num_head = 2
 dim_head = 16
 causal = False
 
-LABELS = ARPAbet = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ '")
+char_tokenizer = CharTokenizer()
+vocab = char_tokenizer.vocab # a dictionary mapping characters to integers
+inv_vocab = char_tokenizer.inv_vocab # a dictionary mapping integers to characters
+
+LABELS = ARPAbet = list(vocab.keys())
 OUT_SIZE = len(LABELS)
 
 epochs = 50

@@ -6,11 +6,13 @@ sys.path.append("python/")
 
 import needle as ndl
 import needle.nn as nn
+import numpy as np
 
 from tqdm import tqdm
 from needle.data.datasets.librispeech_dataset import ASRDataset
 from needle.nn.nn_ctcloss import CTCLoss
 from decoding import generate
+from needle.data.datasets.librispeech_dataset import CharTokenizer
 
 device = ndl.cuda()
 
@@ -27,7 +29,11 @@ num_head = 2
 dim_head = 16
 causal = False
 
-LABELS = ARPAbet = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ '")
+char_tokenizer = CharTokenizer()
+vocab = char_tokenizer.vocab # a dictionary mapping characters to integers
+inv_vocab = char_tokenizer.inv_vocab # a dictionary mapping integers to characters
+
+LABELS = ARPAbet = list(vocab.keys())
 OUT_SIZE = len(LABELS)
 
 epochs = 50
@@ -87,12 +93,15 @@ print("Val dataset samples = {}, batches = {}".format(len(val_data), len(val_loa
 print("Test dataset samples = {}, batches = {}".format(len(test_data), len(test_loader.dataset)))
 
 # Sanity check: data loader
+i= 0
 for data in train_loader:
     x, y, lx, ly = data
     feat_seq_len = x.shape[1]
     print(x.shape, y.shape, lx.shape, ly.shape)
     print(f"feat_seq_len: {feat_seq_len}")
-    break 
+    i += 1
+    if i == 2:
+        break 
 
 class ASRModel(nn.Module):
     def __init__(
@@ -228,11 +237,15 @@ for i, data in enumerate(train_loader):
     # x_len_tup = tuple(map(int, len_x.detach().numpy().flatten()))
     # y_len_tup = tuple(map(int, len_y.detach().numpy().flatten()))
     
-    loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
-    print(f"torch loss: {loss}")
+    torch_loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
+    print(f"torch loss: {torch_loss}")
 
     # loss = criterion(output, y, len_x, len_y)
     # print(f"our loss: {loss}")
+
+    # if np.linalg.norm(torch_loss.detach().numpy() - loss.detach().numpy()) > 1e-4:
+    #     print("Loss mismatch")
+    #     break
 
     distance = calculate_levenshtein(output, y.detach().numpy(), len_x, len_y.detach().numpy(), LABELS, debug = True)
     print(f"lev-distance: {distance}")
