@@ -822,6 +822,8 @@ class CTC:
 
     def get_forward_probs(self, logits, extended_symbols, skip_connect):
         S, T = len(extended_symbols), len(logits)
+        print(f"S: {S}")
+        print(f"T: {T}")
         alpha = array_api.full((T, S), scalar_t('-inf'), dtype="float32", device=logits.device)
         
         # Initialize with normalized logits
@@ -838,15 +840,15 @@ class CTC:
 
             # Current emissions
             for i in range(1, S):
-                curr = scalar_t('-inf')
-                curr_1 = None
-                curr_2 = None
-                curr_3 = None
-                
                 log_emit = logits[t, int(extended_symbols[i].numpy())]
                 log_emit = log_emit.compact().reshape((1, 1))
                 print(f"log_emit: {log_emit}")
                 print(f"log_emit type: {type(log_emit)}")
+
+                curr = log_emit
+                curr_1 = None
+                curr_2 = None
+                curr_3 = None
                 
                 # Standard transition
                 if alpha[t-1, i-1] > scalar_t('-inf'):
@@ -854,31 +856,42 @@ class CTC:
                     curr_1 = curr_1.compact().reshape((1, 1))
                     print(f"curr_1: {curr_1}")
                     print(f"curr_1 type: {type(curr_1)}")
-                    curr = curr_1
+                    curr = curr + curr_1
+                    print(f"curr after curr1: {curr}")
                 
                 # Stay transition
                 if alpha[t-1, i] > scalar_t('-inf'):
                     alpha_t_1_i = alpha[t-1, i].compact().reshape((1, 1))
+                    print(f"alpha_t_1_i: {alpha_t_1_i}")
                     curr_2 = self.logsumexp(curr, alpha_t_1_i)
                     print(f"curr_2: {curr_2}")
                     print(f"curr_2 type: {type(curr_2)}")
-                    curr = curr_2
+                    curr = curr + curr_2
+                    print(f"curr after curr2: {curr}")
                 
                 # Skip connection
                 if scalar_t(skip_connect[i].numpy()) and i >= 2:
                     if alpha[t-1, i-2] > scalar_t('-inf'):
                         alpha_t_1_i_2 = alpha[t-1, i-2].compact().reshape((1, 1))
+                        print(f"alpha_t_1_i_2: {alpha_t_1_i_2}")
                         curr_3 = self.logsumexp(curr, alpha_t_1_i_2)
                         print(f"curr_3: {curr_3}")
                         print(f"curr_3 type: {type(curr_3)}")
-                        curr = curr_3
+                        curr = curr + curr_3
+                        print(f"curr after curr3: {curr}")
                 
                 if curr > scalar_t('-inf'):
-                    alpha[t, i] = curr + log_emit
+                    alpha[t, i] = curr
                     print(f"alpha[{t}, {i}]: {alpha[t, i]}")
 
             # Normalize every timestep
-            max_val = scalar_t(alpha[t].max(axis=0).numpy())
+            alpha_t = alpha[t]
+            print(f"alpha[{t}]: {alpha_t}")
+            print(f"alpha[{t}] type: {type(alpha_t)}")
+            print(f"alpha[{t}] shape: {alpha_t.shape}") 
+            max_val = scalar_t(alpha[t].max(axis=1).numpy())
+            print(f"max_val: {max_val}")
+            print(f"max_val type: {type(max_val)}")
             if max_val != scalar_t('-inf'):
                 alpha[t] = alpha[t] - max_val
                 print(f"alpha[{t}]: {alpha[t]}")
