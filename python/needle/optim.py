@@ -10,7 +10,8 @@ class Optimizer:
     def step(self):
         raise NotImplementedError()
 
-    def reset_grad(self):
+    # FIX @ 2024/11/30: rename reset_grad to zero_grad, to be consistent with PyTorch
+    def zero_grad(self):
         for p in self.params:
             p.grad = None
 
