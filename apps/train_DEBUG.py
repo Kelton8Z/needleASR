@@ -2,6 +2,8 @@ import gc
 import os
 import Levenshtein
 import sys
+sys.path.append("python/")
+
 import needle as ndl
 import needle.nn as nn
 
@@ -10,7 +12,6 @@ from needle.data.datasets.librispeech_dataset import ASRDataset
 from needle.nn.nn_ctcloss import CTCLoss
 from decoding import generate
 
-sys.path.append("python/")
 device = ndl.cuda()
 
 # import wandb
@@ -146,38 +147,56 @@ model = ASRModel(
 )
 
 criterion = CTCLoss(batch_first=True)
+import torch
+torch_criterion = torch.nn.CTCLoss()
 optimizer =  ndl.optim.Adam(model.parameters(), lr=train_config["learning_rate"])
 
 def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
-
-    if debug:
-        pass
-        # print(f"\n----- IN LEVENSHTEIN -----\n")
+    """
+    Calculate average Levenshtein distance between beam search results and reference sequences.
+    
+    Args:
+        h: Input logits tensor of shape (batch_size, time_steps, vocab_size)
+        y: Reference sequences tensor
+        lh: Lengths of input sequences
+        ly: Lengths of reference sequences
+        labels: Vocabulary labels (ARPAbet in this case)
+        debug: Whether to print debug information
         
-    # As per docs for CTC.decoder, is returned here
-    h = h.permute(1, 0, 2)
-    beam_results, beam_scores, timesteps, out_lens = generate(h, beam_width=train_config["beam_width"], blank_id=0, vocab=labels) #decoder.decode(h, seq_lens = lh)
-    #batch_size = beam_results.shape[0] # TODO
+    Returns:
+        Average Levenshtein distance across the batch
+    """
+    if debug:
+        print(f'h shape {h.shape}')
+    
+    # Get beam search results
+    beam_results = generate(h, beam_width=train_config["beam_width"], blank_id=0, vocab=labels)
+    
     batch_size = h.shape[0]
-    distance = 0 # Initialize the distance to be 0 initially
-
-    for i in range(batch_size): 
-        #max_idx = torch.argmax(beam_scores[i])
-        h_sliced = beam_results[i, 0, :out_lens[i, 0]] # [335]
-        h_string = [ARPAbet[i] for i in h_sliced]
-        h_string = "".join(h_string)
-
-        y_sliced = y[i, :len_y[i]]
-        y_string = [str(ARPAbet[i]) for i in y_sliced]
-        y_string = "".join(y_string)
-
+    distance = 0
+    
+    for i in range(batch_size):
+        # Get the best hypothesis (first result) for this sequence
+        if beam_results[i]:  # Check if we got any results
+            h_string = beam_results[i][0][0]  # Take the string from the first (best) result tuple
+        else:
+            h_string = ""  # Empty string if no results
+            
+        # Process reference sequence
+        y_sliced = y[i, :int(ly[i])]
+        y_string = "".join(str(ARPAbet[int(j)]) for j in y_sliced)
+        
+        # Calculate Levenshtein distance
         distance += Levenshtein.distance(h_string, y_string)
-    print("beam: ", beam_results[:, 0, :out_lens[:, 0]])
-    print("mine: ", h_string)
-    print("ref: ", y_string)
-    distance /= batch_size # divide by batch size to get average distance
-
-    return distance
+        
+        if debug:
+            print("beam result:", h_string)
+            print("reference:", y_string)
+    
+    # Calculate average distance
+    average_distance = distance / batch_size
+    
+    return average_distance
 
 # Sanity check: model forward pass
 for i, data in enumerate(train_loader):
@@ -194,20 +213,28 @@ for i, data in enumerate(train_loader):
 
     output = model(x)
     output = nn.ops.logsoftmax(output)
-    print(f"output shape: {output.shape}")
 
+    print(f"output shape: {output.shape}")
+    print(f"output type: {type(output)}")
     print(f"output device: {output.device}")
+    
     print(f"y device: {y.device}")
     print(f"len_x device: {len_x.device}")
     print(f"len_y device: {len_y.device}")
-    print(f"output: {output}")
+    # print(f"output: {output}")
     print(f"y: {y}")
     print(f"len_x: {len_x}")
     print(f"len_y: {len_y}")
-    loss = criterion(output, y, len_x, len_y)
-    print(f"loss: {loss}")
+    # x_len_tup = tuple(map(int, len_x.detach().numpy().flatten()))
+    # y_len_tup = tuple(map(int, len_y.detach().numpy().flatten()))
+    
+    loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
+    print(f"torch loss: {loss}")
 
-    distance = calculate_levenshtein(output, y, len_x, ly, LABELS, debug = False)
+    # loss = criterion(output, y, len_x, len_y)
+    # print(f"our loss: {loss}")
+
+    distance = calculate_levenshtein(output, y.detach().numpy(), len_x, len_y.detach().numpy(), LABELS, debug = True)
     print(f"lev-distance: {distance}")
 
     break
