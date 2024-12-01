@@ -792,10 +792,10 @@ class CTC:
         else:
             max_array = b
             min_array = a
-        print(f"max_array: {max_array}")
-        print(f"min_array: {min_array}")
-        print(f"max_array type: {type(max_array)}")
-        print(f"min_array type: {type(min_array)}")
+        # print(f"max_array: {max_array}")
+        # print(f"min_array: {min_array}")
+        # print(f"max_array type: {type(max_array)}")
+        # print(f"min_array type: {type(min_array)}")
 
         # If values are too far apart, return the max
         # if max_val - min_val > 30:
@@ -805,15 +805,15 @@ class CTC:
         
         # return max_val + np.log1p(np.exp(min_val - max_val))
         t1 = min_array - max_array
-        print(f"t1: {t1}")
+        # print(f"t1: {t1}")
         t2 = t1.exp()
-        print(f"t2: {t2}")
+        # print(f"t2: {t2}")
         t3 = t2 + scalar_t(1)
-        print(f"t3: {t3}")
+        # print(f"t3: {t3}")
         t4 = t3.log()
-        print(f"t4: {t4}")
+        # print(f"t4: {t4}")
         t5 = max_array + t4
-        print(f"t5: {t5}")
+        # print(f"t5: {t5}")
         return t5
         # return_array = max_array + array_api.log(scalar_t(1) + array_api.exp(min_array - max_array))
         # print(f"return_array: {return_array}")
@@ -822,8 +822,8 @@ class CTC:
 
     def get_forward_probs(self, logits, extended_symbols, skip_connect):
         S, T = len(extended_symbols), len(logits)
-        print(f"S: {S}")
-        print(f"T: {T}")
+        # print(f"S: {S}")
+        # print(f"T: {T}")
         alpha = array_api.full((T, S), scalar_t('-inf'), dtype="float32", device=logits.device)
         
         # Initialize with normalized logits
@@ -836,16 +836,16 @@ class CTC:
 
         for t in range(1, T):
             alpha[t, 0] = alpha[t-1, 0] + logits[t, int(extended_symbols[0].numpy())]
-            print(f"alpha[{t}, 0]: {alpha[t, 0]}")
+            # print(f"alpha[{t}, 0]: {alpha[t, 0]}")
 
             # Current emissions
             for i in range(1, S):
                 log_emit = logits[t, int(extended_symbols[i].numpy())]
                 log_emit = log_emit.compact().reshape((1, 1))
-                print(f"log_emit: {log_emit}")
-                print(f"log_emit type: {type(log_emit)}")
+                # print(f"log_emit: {log_emit}")
+                # print(f"log_emit type: {type(log_emit)}")
 
-                curr = log_emit
+                curr = scalar_t('-inf')
                 curr_1 = None
                 curr_2 = None
                 curr_3 = None
@@ -854,49 +854,49 @@ class CTC:
                 if alpha[t-1, i-1] > scalar_t('-inf'):
                     curr_1 = alpha[t-1, i-1]
                     curr_1 = curr_1.compact().reshape((1, 1))
-                    print(f"curr_1: {curr_1}")
-                    print(f"curr_1 type: {type(curr_1)}")
-                    curr = curr + curr_1
-                    print(f"curr after curr1: {curr}")
+                    # print(f"curr_1: {curr_1}")
+                    # print(f"curr_1 type: {type(curr_1)}")
+                    curr = curr_1
+                    # print(f"curr after curr1: {curr}")
                 
                 # Stay transition
                 if alpha[t-1, i] > scalar_t('-inf'):
                     alpha_t_1_i = alpha[t-1, i].compact().reshape((1, 1))
-                    print(f"alpha_t_1_i: {alpha_t_1_i}")
+                    # print(f"alpha_t_1_i: {alpha_t_1_i}")
                     curr_2 = self.logsumexp(curr, alpha_t_1_i)
-                    print(f"curr_2: {curr_2}")
-                    print(f"curr_2 type: {type(curr_2)}")
-                    curr = curr + curr_2
-                    print(f"curr after curr2: {curr}")
+                    # print(f"curr_2: {curr_2}")
+                    # print(f"curr_2 type: {type(curr_2)}")
+                    curr = curr_2
+                    # print(f"curr after curr2: {curr}")
                 
                 # Skip connection
                 if scalar_t(skip_connect[i].numpy()) and i >= 2:
                     if alpha[t-1, i-2] > scalar_t('-inf'):
                         alpha_t_1_i_2 = alpha[t-1, i-2].compact().reshape((1, 1))
-                        print(f"alpha_t_1_i_2: {alpha_t_1_i_2}")
+                        # print(f"alpha_t_1_i_2: {alpha_t_1_i_2}")
                         curr_3 = self.logsumexp(curr, alpha_t_1_i_2)
-                        print(f"curr_3: {curr_3}")
-                        print(f"curr_3 type: {type(curr_3)}")
-                        curr = curr + curr_3
-                        print(f"curr after curr3: {curr}")
+                        # print(f"curr_3: {curr_3}")
+                        # print(f"curr_3 type: {type(curr_3)}")
+                        curr = curr_3
+                        # print(f"curr after curr3: {curr}")
                 
                 if curr > scalar_t('-inf'):
-                    alpha[t, i] = curr
-                    print(f"alpha[{t}, {i}]: {alpha[t, i]}")
+                    alpha[t, i] = curr + log_emit
+                    # print(f"alpha[{t}, {i}]: {alpha[t, i]}")
 
             # Normalize every timestep
             alpha_t = alpha[t]
-            print(f"alpha[{t}]: {alpha_t}")
-            print(f"alpha[{t}] type: {type(alpha_t)}")
-            print(f"alpha[{t}] shape: {alpha_t.shape}") 
+            # print(f"alpha[{t}]: {alpha_t}")
+            # print(f"alpha[{t}] type: {type(alpha_t)}")
+            # print(f"alpha[{t}] shape: {alpha_t.shape}") 
             max_val = scalar_t(alpha[t].max(axis=1).numpy())
-            print(f"max_val: {max_val}")
-            print(f"max_val type: {type(max_val)}")
+            # print(f"max_val: {max_val}")
+            # print(f"max_val type: {type(max_val)}")
             if max_val != scalar_t('-inf'):
                 alpha[t] = alpha[t] - max_val
-                print(f"alpha[{t}]: {alpha[t]}")
+                # print(f"alpha[{t}]: {alpha[t]}")
                 scale[t] = max_val
-                print(f"scale[{t}]: {scale[t]}")
+                # print(f"scale[{t}]: {scale[t]}")
         
         return alpha, scale
 
@@ -916,25 +916,36 @@ class CTC:
             beta[t, S-1] = beta[t+1, S-1] + logits[t, int(extended_symbols[S-1].numpy())]
 
             for i in reversed(range(S-1)):
-                curr = scalar_t('-inf')
+                
                 log_emit = logits[t, int(extended_symbols[i].numpy())]
+                curr = scalar_t('-inf')
+                curr_1 = None
+                curr_2 = None
+                curr_3 = None
                 
                 # Standard transitions
                 if beta[t+1, i] > scalar_t('-inf'):
-                    curr = beta[t+1, i]
+                    curr_1 = beta[t+1, i]
+                    curr_1 = curr_1.compact().reshape((1, 1))
+                    curr = curr_1
+                
                 if beta[t+1, i+1] > scalar_t('-inf'):
-                    curr = self.logsumexp(curr, beta[t+1, i+1])
+                    curr_2 = self.logsumexp(curr, beta[t+1, i+1])
+                    curr_2 = curr_2.compact().reshape((1, 1))
+                    curr = curr_2
                 
                 # Skip connection
                 if i < S-2 and scalar_t(skip_connect[i+2].numpy()):
                     if beta[t+1, i+2] > scalar_t('-inf'):
-                        curr = self.logsumexp(curr, beta[t+1, i+2])
+                        curr_3 = self.logsumexp(curr, beta[t+1, i+2])
+                        curr_3 = curr_3.compact().reshape((1, 1))
+                        curr = curr_3
                 
                 if curr > scalar_t('-inf'):
                     beta[t, i] = curr + log_emit
 
             # Normalize every timestep
-            max_val = scalar_t(beta[t].max(axis=0).numpy())
+            max_val = scalar_t(beta[t].max(axis=1).numpy())
             if max_val != scalar_t('-inf'):
                 beta[t] = beta[t] - max_val
                 scale[t] = max_val
@@ -1065,13 +1076,13 @@ class CTCLoss(TensorOp):
 
             print("=================== Forward, Backward, Posterior ===================")
 
-            alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
+            alpha, _ = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
             assert not any(map(lambda x: x!=x, alpha.numpy().flatten())), "alpha contain NaN values"
             print(f"Alpha: {alpha}")
             print(f"Alpha Shape: {alpha.shape}")
             print(f"Alpha Type: {type(alpha)}")
 
-            beta = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
+            beta, _ = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
             assert not any(map(lambda x: x!=x, beta.numpy().flatten())), "beta contain NaN values"
             print(f"Beta: {beta}")
             print(f"Beta Shape: {beta.shape}")

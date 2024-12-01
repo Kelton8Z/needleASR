@@ -20,7 +20,7 @@ device = ndl.cuda()
 # wandb.login(key=os.environ['WANDB_KEY'])
 
 dropout = 0.1
-batch_size = 8
+batch_size = 1
 seq_len = 5
 input_dim = 40
 hidden_size = 64
@@ -240,12 +240,12 @@ for i, data in enumerate(train_loader):
     torch_loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
     print(f"torch loss: {torch_loss}")
 
-    # loss = criterion(output, y, len_x, len_y)
-    # print(f"our loss: {loss}")
+    loss = criterion(output, y, len_x, len_y)
+    print(f"our loss: {loss}")
 
-    # if np.linalg.norm(torch_loss.detach().numpy() - loss.detach().numpy()) > 1e-4:
-    #     print("Loss mismatch")
-    #     break
+    if np.linalg.norm(torch_loss.detach().numpy() - loss.detach().numpy()) > 1e-4:
+        print("Loss mismatch")
+        break
 
     distance = calculate_levenshtein(output, y.detach().numpy(), len_x, len_y.detach().numpy(), LABELS, debug = True)
     print(f"lev-distance: {distance}")
@@ -260,7 +260,7 @@ def evaluate(data_loader, model):
     model.eval()
     for i, data in enumerate(data_loader):
         x, y, len_x, len_y = data
-        x, y = x.to(device), y.to(device)
+        x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
         output = model(x)
 
         loss = criterion(output, y, len_x, len_y)
@@ -298,8 +298,9 @@ def train_step(train_loader, model, optimizer, criterion):
     for i, data in enumerate(train_loader):
         optimizer.zero_grad()
         x, y, len_x, len_y = data
-        x, y = x.to(device), y.to(device)
+        x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
         output = model(x)
+        output = nn.ops.logsoftmax(output)
         loss = criterion(output, y, len_x, len_y)
         loss.backward()
         optimizer.step()
