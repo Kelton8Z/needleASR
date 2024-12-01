@@ -207,6 +207,13 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
     
     return average_distance
 
+import datetime
+
+# Initialize TensorBoard writer
+from torch.utils.tensorboard import SummaryWriter
+log_dir = f"runs/training_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+writer = SummaryWriter(log_dir)
+
 # Sanity check: model forward pass
 for i, data in enumerate(train_loader):
 
@@ -293,7 +300,7 @@ dist_freq = 1
 
 def train_step(train_loader, model, optimizer, criterion):
     batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, leave=False, position=0, desc='Train') 
-    train_loss = 0
+    train_loss = torch_train_loss = 0
     model.train()
     for i, data in enumerate(train_loader):
         optimizer.zero_grad()
@@ -302,6 +309,8 @@ def train_step(train_loader, model, optimizer, criterion):
         output = model(x)
         output = nn.ops.logsoftmax(output)
         loss = criterion(output, y, len_x, len_y)
+        torch_loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
+
         loss.backward()
         optimizer.step()
 
@@ -312,25 +321,34 @@ def train_step(train_loader, model, optimizer, criterion):
         batch_bar.update()
 
         train_loss += loss
+        torch_train_loss += torch_loss
     
     batch_bar.close()
     train_loss /= len(train_loader) 
+    torch_train_loss /= len(train_loader) 
 
-    return train_loss 
+    return train_loss, torch_train_loss
 
 # The training loop
 def train_asr(train_loader, val_loader, model, optimizer, criterion):
     for epoch in range(train_config["epochs"]):
 
         # one training step
-        train_loss = train_step(train_loader, model, optimizer, criterion)
+        train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion)
+        writer.add_scalar('Loss/PyTorch', torch_loss.item(), epoch)
+        writer.add_scalar('Loss/Needle', loss.item(), epoch)
+        
+        # Log the difference between losses
+        loss_diff = abs(torch_loss.item() - loss.item())
+        writer.add_scalar('Loss/Difference', loss_diff, epoch)
+        
         # one validation step (to fail early as a test)
         val_loss, val_dist = evaluate(val_loader, model)
         # Calculating levenshtein distance isn't needed every epoch in the training step 
         print(f"val_loss: {val_loss}, val_dist: {val_dist}")
-
         # You may want to log some hyperparameters and results on wandb
         # wandb.log({"validation loss": val_loss, "validation distance": val_dist})
         
 scheduler = None
 train_asr(train_loader, val_loader, model, optimizer, criterion)
+writer.flush()
