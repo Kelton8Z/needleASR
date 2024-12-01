@@ -208,7 +208,7 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
     return average_distance
 
 import datetime
-
+import time
 # Initialize TensorBoard writer
 from torch.utils.tensorboard import SummaryWriter
 log_dir = f"runs/training_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -243,12 +243,17 @@ for i, data in enumerate(train_loader):
     print(f"len_y: {len_y}")
     # x_len_tup = tuple(map(int, len_x.detach().numpy().flatten()))
     # y_len_tup = tuple(map(int, len_y.detach().numpy().flatten()))
-    
+    t1 = time.time()
     torch_loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
-    print(f"torch loss: {torch_loss}")
+    t2 = time.time()
+    print(f"torch loss: {torch_loss}, after {t2-t1:.2f} seconds")
 
+    t3 = time.time()
     loss = criterion(output, y, len_x, len_y)
-    print(f"our loss: {loss}")
+    t4 = time.time()
+    print(f"our loss: {loss}, after {t4-t3:.2f} seconds")
+
+    loss.backward()
 
     if np.linalg.norm(torch_loss.detach().numpy() - loss.detach().numpy()) > 1e-4:
         print("Loss mismatch")
