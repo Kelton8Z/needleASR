@@ -1122,7 +1122,12 @@ class CTCLoss(TensorOp):
             logits, target, input_lengths, target_lengths, self.blank, self.reduction
         )
 
-        return out_grad.reshape((1, ) * len(grad.shape)).broadcast_to(grad.shape) * grad
+        return_val = out_grad.reshape((1, ) * len(grad.shape)).broadcast_to(grad.shape) * grad
+
+        if self.batch_first:
+            return_val = return_val.transpose((1, 0))
+
+        return return_val
 
 def ctc_loss(logits, target, input_lengths, target_lengths, batch_first, blank, reduction):
     return CTCLoss(batch_first, blank, reduction)(logits, target, input_lengths, target_lengths)
