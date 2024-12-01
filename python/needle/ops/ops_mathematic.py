@@ -1148,8 +1148,8 @@ class CTCLossGradient(TensorOp):
             logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
 
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
-            alpha = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
-            beta = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
+            alpha, _ = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
+            beta, _ = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
             gamma = self.ctc.get_posterior_probs(alpha, beta)
             T, S = gamma.shape
 
