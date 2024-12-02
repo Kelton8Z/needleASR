@@ -1129,7 +1129,7 @@ class CTCLossGradient(TensorOp):
             input_lengths: NDArray, target_lengths: NDArray
         ) -> NDArray:
         _, B, _ = logits.shape
-        grad = array_api.full(logits.shape, 0, dtype="float32", device=logits.device)
+        grad = array_api.full(logits.shape, scalar_t(0), dtype="float32", device=logits.device)
 
         for batch_itr in range(B):
             target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
@@ -1137,15 +1137,19 @@ class CTCLossGradient(TensorOp):
 
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
             alpha, _ = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
+            assert not any(map(lambda x: x!=x, alpha.numpy().flatten())), "alpha in gradient contain NaN values"
             beta, _ = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
+            assert not any(map(lambda x: x!=x, beta.numpy().flatten())), "beta in gradient contain NaN values"
             gamma = self.ctc.get_posterior_probs(alpha, beta)
+            assert not any(map(lambda x: x!=x, gamma.numpy().flatten())), "gamma in gradient contain NaN values"
             T, S = gamma.shape
 
             for t in range(T):
                 for s in range(S):
                     prob = logits_trunc[t, int(extended_symbols[s].numpy())]
                     grad[t, batch_itr, int(extended_symbols[s].numpy())] -= (gamma[t, s] * array_api.exp(-prob)).compact().reshape((1, 1, 1))
-            
+        
+        assert not any(map(lambda x: x!=x, grad.numpy().flatten())), "grad contain NaN values"
         return grad
 
     def gradient(self, out_grad: Tensor, node: Tensor):

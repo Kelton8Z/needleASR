@@ -43,7 +43,6 @@ class CTCLoss(Module):
             avg. divergence between the posterior probability and the target
 
         """
-        print("CTCLoss forward begin")
         return ops.ctc_loss(
             logits, target, input_lengths, 
             target_lengths, self.batch_first, 
