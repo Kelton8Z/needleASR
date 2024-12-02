@@ -20,13 +20,12 @@ class LogSoftmax(TensorOp):
     def gradient(self, out_grad, node):
         ### BEGIN YOUR SOLUTION
         z = node.inputs[0]
-        print(f"out_grad shape: {out_grad.shape}")
         xp = -exp(node) + 1
-        print(f"xp shape: {xp.shape}")
         grad = out_grad * (-exp(node) + 1)
-        z_shape = list(z.shape)
-        z_shape[-1] = 1
-        out_grad_sum = out_grad.sum(-1).reshape(tuple(z_shape)).broadcast_to(z.shape)
+        z_shape_reduction = list(z.shape)
+        z_shape_reduction[-1] = 1
+        out_grad_ndim = len(out_grad.shape)
+        out_grad_sum = out_grad.sum((out_grad_ndim - 1, )).reshape(tuple(z_shape_reduction)).broadcast_to(z.shape)
         grad = out_grad - out_grad_sum * exp(node)
         return grad
         ### END YOUR SOLUTION
