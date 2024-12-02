@@ -13,6 +13,7 @@ from needle.data.datasets.librispeech_dataset import ASRDataset
 from needle.nn.nn_ctcloss import CTCLoss
 from decoding import generate
 from needle.data.datasets.librispeech_dataset import CharTokenizer
+from matplotlib import pyplot as plt
 
 device = ndl.cuda()
 
@@ -72,6 +73,7 @@ test_data = ASRDataset(dir, "test")
 train_loader = ndl.data.DataLoader(
     train_data, 
     batch_size=train_config['batch_size'], 
+    shuffle=False, 
     collate_fn=train_data.collate_fn
 )
 val_loader = ndl.data.DataLoader(
@@ -215,54 +217,60 @@ log_dir = f"runs/training_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
 writer = SummaryWriter(log_dir)
 
 # Sanity check: model forward pass
-for i, data in enumerate(train_loader):
+# for i, data in enumerate(train_loader):
 
-    x, y, len_x, len_y = data
-    print(f"x shape: {x.shape}")
-    print(f"y shape: {y.shape}")
-    print(f"len_x shape: {len_x.shape}")
-    print(f"len_y shape: {len_y.shape}")
+#     x, y, len_x, len_y = data
+#     print(f"x shape: {x.shape}")
+#     print(f"y shape: {y.shape}")
+#     print(f"len_x shape: {len_x.shape}")
+#     print(f"len_y shape: {len_y.shape}")
 
-    x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
-    print(f"x device: {x.device}")
-    print(f"y device: {y.device}")
+#     x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
+#     print(f"x device: {x.device}")
+#     print(f"y device: {y.device}")
 
-    output = model(x)
-    output = nn.ops.logsoftmax(output)
+#     output = model(x)
+#     output = nn.ops.logsoftmax(output)
 
-    print(f"output shape: {output.shape}")
-    print(f"output type: {type(output)}")
-    print(f"output device: {output.device}")
+#     print(f"output shape: {output.shape}")
+#     print(f"output type: {type(output)}")
+#     print(f"output device: {output.device}")
     
-    print(f"y device: {y.device}")
-    print(f"len_x device: {len_x.device}")
-    print(f"len_y device: {len_y.device}")
-    # print(f"output: {output}")
-    print(f"y: {y}")
-    print(f"len_x: {len_x}")
-    print(f"len_y: {len_y}")
-    # x_len_tup = tuple(map(int, len_x.detach().numpy().flatten()))
-    # y_len_tup = tuple(map(int, len_y.detach().numpy().flatten()))
-    t1 = time.time()
-    torch_loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
-    t2 = time.time()
-    print(f"torch loss: {torch_loss}, after {t2-t1:.2f} seconds")
+#     print(f"y device: {y.device}")
+#     print(f"len_x device: {len_x.device}")
+#     print(f"len_y device: {len_y.device}")
+#     # print(f"output: {output}")
+#     print(f"y: {y}")
+#     print(f"len_x: {len_x}")
+#     print(f"len_y: {len_y}")
+#     # x_len_tup = tuple(map(int, len_x.detach().numpy().flatten()))
+#     # y_len_tup = tuple(map(int, len_y.detach().numpy().flatten()))
+#     t1 = time.time()
+#     torch_loss = torch_criterion(
+#         torch.tensor(output.transpose((0, 1)).detach().numpy(), dtype=torch.float32), 
+#         torch.tensor(y.detach().numpy(), dtype=torch.float32), 
+#         torch.tensor(len_x.detach().numpy(), dtype=torch.int32), 
+#         torch.tensor(len_y.detach().numpy(), dtype=torch.int32)
+#     )
 
-    t3 = time.time()
-    loss = criterion(output, y, len_x, len_y)
-    t4 = time.time()
-    print(f"our loss: {loss}, after {t4-t3:.2f} seconds")
+#     t2 = time.time()
+#     print(f"torch loss: {torch_loss}, after {t2-t1:.2f} seconds")
 
-    loss.backward()
+#     t3 = time.time()
+#     loss = criterion(output, y, len_x, len_y)
+#     t4 = time.time()
+#     print(f"our loss: {loss}, after {t4-t3:.2f} seconds")
 
-    if np.linalg.norm(torch_loss.detach().numpy() - loss.detach().numpy()) > 1e-4:
-        print("Loss mismatch")
-        break
+#     loss.backward()
 
-    distance = calculate_levenshtein(output, y.detach().numpy(), len_x, len_y.detach().numpy(), LABELS, debug = True)
-    print(f"lev-distance: {distance}")
+#     if np.linalg.norm(torch_loss.detach().numpy() - loss.detach().numpy()) > 1e-4:
+#         print("Loss mismatch")
+#         break
 
-    break
+#     distance = calculate_levenshtein(output, y.detach().numpy(), len_x, len_y.detach().numpy(), LABELS, debug = True)
+#     print(f"lev-distance: {distance}")
+
+#     break
 
 
 def evaluate(data_loader, model):
@@ -303,25 +311,30 @@ end = train_config["epochs"]
 best_val_dist = float("inf") # if restarting from some checkpoint, use that last number.
 dist_freq = 1
 
-def train_step(train_loader, model, optimizer, criterion):
+def train_step(train_loader, model, optimizer, criterion, epoch):
     batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, leave=False, position=0, desc='Train') 
     train_loss = torch_train_loss = 0
+
     model.train()
-    for i, data in enumerate(train_loader):
+    for i, data in tqdm(enumerate(train_loader), desc=f"Train epoch {epoch}"):
         optimizer.zero_grad()
         x, y, len_x, len_y = data
         x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
         output = model(x)
         output = nn.ops.logsoftmax(output)
         loss = criterion(output, y, len_x, len_y)
-        torch_loss = torch_criterion(torch.tensor(output.transpose((0, 1)).detach().numpy()), torch.tensor(y.detach().numpy()), torch.tensor(len_x.detach().numpy(), dtype=torch.int32), torch.tensor(len_y.detach().numpy(), dtype=torch.int32))
+        torch_loss = torch_criterion(
+            torch.tensor(output.transpose((0, 1)).detach().numpy(), dtype=torch.float32), 
+            torch.tensor(y.detach().numpy(), dtype=torch.float32), 
+            torch.tensor(len_x.detach().numpy(), dtype=torch.int32), 
+            torch.tensor(len_y.detach().numpy(), dtype=torch.int32)
+        )
 
         loss.backward()
         optimizer.step()
 
         batch_bar.set_postfix(
-            loss = f"{loss/(i+1):.4f}",
-            lr = f"{optimizer.param_groups[0]['lr']}"
+            loss = f"{loss.realize_cached_data().numpy()/(i+1):.4f}"
         )
         batch_bar.update()
 
@@ -330,29 +343,37 @@ def train_step(train_loader, model, optimizer, criterion):
     
     batch_bar.close()
     train_loss /= len(train_loader) 
-    torch_train_loss /= len(train_loader) 
+    torch_train_loss /= len(train_loader)
+
 
     return train_loss, torch_train_loss
 
+def plot_loss(train_loss_list, train_torch_loss_list):
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_loss_list, label="Needle loss")
+    plt.plot(train_torch_loss_list, label="PyTorch loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training loss")
+    plt.legend()
+    plt.savefig("train_loss.png")
+
 # The training loop
 def train_asr(train_loader, val_loader, model, optimizer, criterion):
-    for epoch in range(train_config["epochs"]):
+    train_loss_list = []
+    train_torch_loss_list = []
 
+    for epoch in range(train_config["epochs"]):
         # one training step
-        train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion)
-        writer.add_scalar('Loss/PyTorch', torch_loss.item(), epoch)
-        writer.add_scalar('Loss/Needle', loss.item(), epoch)
-        
-        # Log the difference between losses
-        loss_diff = abs(torch_loss.item() - loss.item())
-        writer.add_scalar('Loss/Difference', loss_diff, epoch)
+        train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion, epoch)
+        train_loss_list.append(train_loss)
+        train_torch_loss_list.append(torch_train_loss)
         
         # one validation step (to fail early as a test)
         val_loss, val_dist = evaluate(val_loader, model)
-        # Calculating levenshtein distance isn't needed every epoch in the training step 
         print(f"val_loss: {val_loss}, val_dist: {val_dist}")
-        # You may want to log some hyperparameters and results on wandb
-        # wandb.log({"validation loss": val_loss, "validation distance": val_dist})
+
+    plot_loss(train_loss_list, train_torch_loss_list)
         
 scheduler = None
 train_asr(train_loader, val_loader, model, optimizer, criterion)

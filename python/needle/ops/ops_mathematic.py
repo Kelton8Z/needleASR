@@ -20,6 +20,9 @@ from .ops_tuple import *
 
 # Use np.float32 rather than float, since float is float64 by default
 scalar_t = np.float32
+MIN_VAL = -1e25
+EPSILON = 1e-6
+DEBUG = False
 
 
 class EWiseAdd(TensorOp):
@@ -770,61 +773,36 @@ class CTC:
             NDArray!!!
         """
         # Convert NDArray to scalar
-        # a_val = scalar_t(a.numpy() if hasattr(a, 'numpy') else a)
-        # b_val = scalar_t(b.numpy() if hasattr(b, 'numpy') else b)
         
         # If one log prob is -inf, then its prob is zero
-        # then, return the other log prob
-        # if a_val == scalar_t('-inf'):
-        #     return b_val
-        # if b_val == scalar_t('-inf'):
-        #     return a_val
-        if scalar_t(a.numpy()) == scalar_t('-inf'):
+        if scalar_t(a.numpy()) == scalar_t(MIN_VAL) and scalar_t(b.numpy()) != scalar_t(MIN_VAL):
             return b
-        if scalar_t(b.numpy()) == scalar_t('-inf'):
+        elif scalar_t(b.numpy()) == scalar_t(MIN_VAL) and scalar_t(a.numpy()) != scalar_t(MIN_VAL):
+            return a
+        elif scalar_t(a.numpy()) == scalar_t(MIN_VAL) and scalar_t(b.numpy()) == scalar_t(MIN_VAL): 
             return a
         
-        # max_val = max(a_val, b_val)
-        # min_val = min(a_val, b_val)
         if scalar_t(a.numpy()) >= scalar_t(b.numpy()):
             max_array = a
             min_array = b
         else:
             max_array = b
             min_array = a
-        # print(f"max_array: {max_array}")
-        # print(f"min_array: {min_array}")
-        # print(f"max_array type: {type(max_array)}")
-        # print(f"min_array type: {type(min_array)}")
 
         # If values are too far apart, return the max
-        # if max_val - min_val > 30:
-        #     return max_val
         if scalar_t(max_array.numpy()) - scalar_t(min_array.numpy()) > scalar_t(30):
             return max_array
         
-        # return max_val + np.log1p(np.exp(min_val - max_val))
         t1 = min_array - max_array
-        # print(f"t1: {t1}")
         t2 = t1.exp()
-        # print(f"t2: {t2}")
         t3 = t2 + scalar_t(1)
-        # print(f"t3: {t3}")
         t4 = t3.log()
-        # print(f"t4: {t4}")
         t5 = max_array + t4
-        # print(f"t5: {t5}")
         return t5
-        # return_array = max_array + array_api.log(scalar_t(1) + array_api.exp(min_array - max_array))
-        # print(f"return_array: {return_array}")
-        # print(f"return_array type: {type(return_array)}")
-        # return max_array + (scalar_t(1) + (min_array - max_array).exp()).log()
 
     def get_forward_probs(self, logits, extended_symbols, skip_connect):
         S, T = len(extended_symbols), len(logits)
-        # print(f"S: {S}")
-        # print(f"T: {T}")
-        alpha = array_api.full((T, S), scalar_t('-inf'), dtype="float32", device=logits.device)
+        alpha = array_api.full((T, S), scalar_t(MIN_VAL), dtype="float32", device=logits.device)
         
         # Initialize with normalized logits
         alpha[0, 0] = logits[0, int(extended_symbols[0].numpy())]
@@ -836,73 +814,51 @@ class CTC:
 
         for t in range(1, T):
             alpha[t, 0] = alpha[t-1, 0] + logits[t, int(extended_symbols[0].numpy())]
-            # print(f"alpha[{t}, 0]: {alpha[t, 0]}")
 
             # Current emissions
             for i in range(1, S):
                 log_emit = logits[t, int(extended_symbols[i].numpy())]
                 log_emit = log_emit.compact().reshape((1, 1))
-                # print(f"log_emit: {log_emit}")
-                # print(f"log_emit type: {type(log_emit)}")
 
-                curr = scalar_t('-inf')
+                curr = scalar_t(MIN_VAL)
                 curr_1 = None
                 curr_2 = None
                 curr_3 = None
                 
                 # Standard transition
-                if alpha[t-1, i-1] > scalar_t('-inf'):
+                if alpha[t-1, i-1] > scalar_t(MIN_VAL):
                     curr_1 = alpha[t-1, i-1]
                     curr_1 = curr_1.compact().reshape((1, 1))
-                    # print(f"curr_1: {curr_1}")
-                    # print(f"curr_1 type: {type(curr_1)}")
                     curr = curr_1
-                    # print(f"curr after curr1: {curr}")
                 
                 # Stay transition
-                if alpha[t-1, i] > scalar_t('-inf'):
+                if alpha[t-1, i] > scalar_t(MIN_VAL):
                     alpha_t_1_i = alpha[t-1, i].compact().reshape((1, 1))
-                    # print(f"alpha_t_1_i: {alpha_t_1_i}")
                     curr_2 = self.logsumexp(curr, alpha_t_1_i)
-                    # print(f"curr_2: {curr_2}")
-                    # print(f"curr_2 type: {type(curr_2)}")
                     curr = curr_2
-                    # print(f"curr after curr2: {curr}")
                 
                 # Skip connection
                 if scalar_t(skip_connect[i].numpy()) and i >= 2:
-                    if alpha[t-1, i-2] > scalar_t('-inf'):
+                    if alpha[t-1, i-2] > scalar_t(MIN_VAL):
                         alpha_t_1_i_2 = alpha[t-1, i-2].compact().reshape((1, 1))
-                        # print(f"alpha_t_1_i_2: {alpha_t_1_i_2}")
                         curr_3 = self.logsumexp(curr, alpha_t_1_i_2)
-                        # print(f"curr_3: {curr_3}")
-                        # print(f"curr_3 type: {type(curr_3)}")
                         curr = curr_3
-                        # print(f"curr after curr3: {curr}")
                 
-                if curr > scalar_t('-inf'):
+                if curr > scalar_t(MIN_VAL):
                     alpha[t, i] = curr + log_emit
-                    # print(f"alpha[{t}, {i}]: {alpha[t, i]}")
 
             # Normalize every timestep
             alpha_t = alpha[t]
-            # print(f"alpha[{t}]: {alpha_t}")
-            # print(f"alpha[{t}] type: {type(alpha_t)}")
-            # print(f"alpha[{t}] shape: {alpha_t.shape}") 
             max_val = scalar_t(alpha[t].max(axis=1).numpy())
-            # print(f"max_val: {max_val}")
-            # print(f"max_val type: {type(max_val)}")
-            if max_val != scalar_t('-inf'):
+            if max_val != scalar_t(MIN_VAL):
                 alpha[t] = alpha[t] - max_val
-                # print(f"alpha[{t}]: {alpha[t]}")
                 scale[t] = max_val
-                # print(f"scale[{t}]: {scale[t]}")
         
         return alpha, scale
 
     def get_backward_probs(self, logits, extended_symbols, skip_connect):
         S, T = len(extended_symbols), len(logits)
-        beta = array_api.full((T, S), scalar_t('-inf'), dtype="float32", device=logits.device)
+        beta = array_api.full((T, S), scalar_t(MIN_VAL), dtype="float32", device=logits.device)
         
         # Initialize normalized
         beta[T-1, S-1] = logits[T-1, int(extended_symbols[S-1].numpy())]
@@ -918,35 +874,35 @@ class CTC:
             for i in reversed(range(S-1)):
                 
                 log_emit = logits[t, int(extended_symbols[i].numpy())]
-                curr = scalar_t('-inf')
+                curr = scalar_t(MIN_VAL)
                 curr_1 = None
                 curr_2 = None
                 curr_3 = None
                 
                 # Standard transitions
-                if beta[t+1, i] > scalar_t('-inf'):
+                if beta[t+1, i] > scalar_t(MIN_VAL):
                     curr_1 = beta[t+1, i]
                     curr_1 = curr_1.compact().reshape((1, 1))
                     curr = curr_1
                 
-                if beta[t+1, i+1] > scalar_t('-inf'):
+                if beta[t+1, i+1] > scalar_t(MIN_VAL):
                     curr_2 = self.logsumexp(curr, beta[t+1, i+1])
                     curr_2 = curr_2.compact().reshape((1, 1))
                     curr = curr_2
                 
                 # Skip connection
                 if i < S-2 and scalar_t(skip_connect[i+2].numpy()):
-                    if beta[t+1, i+2] > scalar_t('-inf'):
+                    if beta[t+1, i+2] > scalar_t(MIN_VAL):
                         curr_3 = self.logsumexp(curr, beta[t+1, i+2])
                         curr_3 = curr_3.compact().reshape((1, 1))
                         curr = curr_3
                 
-                if curr > scalar_t('-inf'):
+                if curr > scalar_t(MIN_VAL):
                     beta[t, i] = curr + log_emit
 
             # Normalize every timestep
             max_val = scalar_t(beta[t].max(axis=1).numpy())
-            if max_val != scalar_t('-inf'):
+            if max_val != scalar_t(MIN_VAL):
                 beta[t] = beta[t] - max_val
                 scale[t] = max_val
 
@@ -958,11 +914,11 @@ class CTC:
         
         for t in range(T):
             # Find valid positions and max value for numerical stability
-            max_val = scalar_t('-inf')
+            max_val = scalar_t(MIN_VAL)
             valid_pos = []
             
             for s in range(S):
-                if alpha[t, s] > scalar_t('-inf') and beta[t, s] > scalar_t('-inf'):
+                if alpha[t, s] > scalar_t(MIN_VAL) and beta[t, s] > scalar_t(MIN_VAL):
                     curr_val = scalar_t((alpha[t, s] + beta[t, s]).numpy())
                     max_val = max(max_val, curr_val)
                     valid_pos.append((s, curr_val))
@@ -1018,11 +974,10 @@ class CTCLoss(TensorOp):
             avg. divergence between the posterior probability and the target
 
         """
-        print(f"logits shape before permut: {logits.shape}")
         if self.batch_first:
             logits = logits.permute((1, 0, 2))
-        print(f"logits shape after permut: {logits.shape}")
-        
+
+        T, _, _ = logits.shape
         B, _ = target.shape
         total_loss = array_api.full((B, ), scalar_t(0), dtype="float32", device=logits.device)
         extended_symbols_list = []
@@ -1039,59 +994,73 @@ class CTCLoss(TensorOp):
             #     Compute posteriors using total probability function
             #     Compute expected divergence for each batch and store it in totalLoss
             #     Take an average over all batches and return final result
-            print(f"Batch {batch_itr}")
-            print("=================== Trunc ===================")
 
-            # print type of logits, target, input_lengths, target_lengths
-            print(f"Logits Type: {type(logits)}")
-            print(f"Target Type: {type(target)}")
-            print(f"Input Lengths Type: {type(input_lengths)}")
-            print(f"Target Lengths Type: {type(target_lengths)}")
+            if DEBUG:
+                print("=================== Trunc ===================")
 
-            # print shape of logits, target, input_lengths, target_lengths
-            print(f"Logits Shape: {logits.shape}")
-            print(f"Target Shape: {target.shape}")
-            print(f"Input Lengths Shape: {input_lengths.shape}")
-            print(f"Target Lengths Shape: {target_lengths.shape}")
+                # print type of logits, target, input_lengths, target_lengths
+                print(f"Logits Type: {type(logits)}")
+                print(f"Target Type: {type(target)}")
+                print(f"Input Lengths Type: {type(input_lengths)}")
+                print(f"Target Lengths Type: {type(target_lengths)}")
 
-            # print device of logits, target, input_lengths, target_lengths
-            print(f"Logits Device: {logits.device}")
-            print(f"Target Device: {target.device}")
-            print(f"Input Lengths Device: {input_lengths.device}")
-            print(f"Target Lengths Device: {target_lengths.device}")
+                # print shape of logits, target, input_lengths, target_lengths
+                print(f"Logits Shape: {logits.shape}")
+                print(f"Target Shape: {target.shape}")
+                print(f"Input Lengths Shape: {input_lengths.shape}")
+                print(f"Target Lengths Shape: {target_lengths.shape}")
+
+                # print device of logits, target, input_lengths, target_lengths
+                print(f"Logits Device: {logits.device}")
+                print(f"Target Device: {target.device}")
+                print(f"Input Lengths Device: {input_lengths.device}")
+                print(f"Target Lengths Device: {target_lengths.device}")
 
             target_trunc = target[batch_itr, :int(target_lengths[batch_itr].numpy())].compact().reshape(-1)
             logits_trunc = logits[:int(input_lengths[batch_itr].numpy()), batch_itr, :].compact().reshape((int(input_lengths[batch_itr].numpy()), -1))
 
-            print(f"Target Truncated: {target_trunc}")
-            print(f"Target Truncated Shape: {target_trunc.shape}")
-            print(f"Logits Truncated: {logits_trunc}")
-            print(f"Logits Truncated Shape: {logits_trunc.shape}")
+            if DEBUG:
+                print(f"Target Truncated: {target_trunc}")
+                print(f"Target Truncated Shape: {target_trunc.shape}")
+                print(f"Logits Truncated: {logits_trunc}")
+                print(f"Logits Truncated Shape: {logits_trunc.shape}")
 
-            print("=================== Extend Target ===================")
+                print("=================== Extend Target ===================")
 
             extended_symbols, skip_connect = self.ctc.extend_target_with_blank(target_trunc)
 
-            print(f"Extended Symbols: {extended_symbols}")
+            if DEBUG:
+                print(f"Extended Symbols: {extended_symbols}")
 
-            print("=================== Forward, Backward, Posterior ===================")
+                print("=================== Forward ===================")
 
             alpha, _ = self.ctc.get_forward_probs(logits_trunc, extended_symbols, skip_connect)
             assert not any(map(lambda x: x!=x, alpha.numpy().flatten())), "alpha contain NaN values"
-            print(f"Alpha: {alpha}")
-            print(f"Alpha Shape: {alpha.shape}")
-            print(f"Alpha Type: {type(alpha)}")
+
+            if DEBUG:
+                print(f"Alpha: {alpha}")
+                print(f"Alpha Shape: {alpha.shape}")
+                print(f"Alpha Type: {type(alpha)}")
+
+                print("=================== Backward ===================")
 
             beta, _ = self.ctc.get_backward_probs(logits_trunc, extended_symbols, skip_connect)
             assert not any(map(lambda x: x!=x, beta.numpy().flatten())), "beta contain NaN values"
-            print(f"Beta: {beta}")
-            print(f"Beta Shape: {beta.shape}")
-            print(f"Beta Type: {type(beta)}")
+
+            if DEBUG:
+                print(f"Beta: {beta}")
+                print(f"Beta Shape: {beta.shape}")
+                print(f"Beta Type: {type(beta)}")
+
+                print("=================== Posterior ===================")
 
             gamma = self.ctc.get_posterior_probs(alpha, beta)
-            print(f"Gamma: {gamma}")
-            print(f"Gamma Shape: {gamma.shape}")
-            print(f"Gamma Type: {type(gamma)}")
+            assert not any(map(lambda x: x!=x, gamma.numpy().flatten())), "gamma contain NaN values"
+
+            if DEBUG:
+                print(f"Gamma: {gamma}")
+                print(f"Gamma Shape: {gamma.shape}")
+                print(f"Gamma Type: {type(gamma)}")
 
             extended_symbols_list.append(extended_symbols)
 
@@ -1103,13 +1072,27 @@ class CTCLoss(TensorOp):
                 for s in range(S):
                     logits_extended[t, s] = logits_trunc[t, int(extended_symbols[s].numpy())]
 
-            div = (gamma * logits_extended.log()).sum(axis=1).sum(axis=0) # Sum over all the symbols and time steps
+            logits_extended = logits_extended + EPSILON
+
+            t0 = logits_extended # logits itself is log probabilities, should not log() again
+            assert not any(map(lambda x: x!=x, t0.numpy().flatten())), "t0 contain NaN values"
+            t1 = gamma * logits_extended
+            assert not any(map(lambda x: x!=x, t1.numpy().flatten())), "t1 contain NaN values"
+            t2 = t1.sum(axis=1)
+            assert not any(map(lambda x: x!=x, t2.numpy().flatten())), "t2 contain NaN values"
+            t3 = t2.sum(axis=0)
+            assert not any(map(lambda x: x!=x, t3.numpy().flatten())), "t3 contain NaN values"
+
+            div = (gamma * logits_extended).sum(axis=1).sum(axis=0) # Sum over all the symbols and time steps
+            assert not any(map(lambda x: x!=x, div.numpy().flatten())), "div contain NaN values"
             total_loss[batch_itr] = -div
 
         if self.reduction == "mean":
-            return total_loss.sum(axis=0) / B
+            return total_loss.sum(axis=0) / (B * T)
         elif self.reduction == "sum":
             return total_loss.sum(axis=0)
+        elif self.reduction == "None":
+            return total_loss
         else:
             raise ValueError(f"Invalid reduction type {self.reduction}")
 
@@ -1160,7 +1143,8 @@ class CTCLossGradient(TensorOp):
 
             for t in range(T):
                 for s in range(S):
-                    grad[t, batch_itr, int(extended_symbols[s].numpy())] -= (gamma[t, s] / logits_trunc[t, int(extended_symbols[s].numpy())]).compact().reshape((1, 1, 1))
+                    prob = logits_trunc[t, int(extended_symbols[s].numpy())]
+                    grad[t, batch_itr, int(extended_symbols[s].numpy())] -= (gamma[t, s] * array_api.exp(-prob)).compact().reshape((1, 1, 1))
             
         return grad
 
