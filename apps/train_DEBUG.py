@@ -15,7 +15,7 @@ from decoding import generate
 from needle.data.datasets.librispeech_dataset import CharTokenizer
 from matplotlib import pyplot as plt
 
-device = ndl.cpu()
+device = ndl.cuda()
 
 # import wandb
 # wandb.login(key=os.environ['WANDB_KEY'])
