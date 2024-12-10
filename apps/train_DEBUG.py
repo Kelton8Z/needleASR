@@ -243,7 +243,7 @@ def evaluate(data_loader, model):
           
         dist = calculate_levenshtein(output, y, len_x, len_y, LABELS, debug=False)
         batch_bar.set_postfix(
-            dist = f"{dist.numpy()/(i+1):.4f}"
+            levenshtein_dist = f"{dist/(i+1):.4f}"
         )
         batch_bar.update()
 
@@ -375,7 +375,7 @@ def train_asr(train_loader, val_loader, model, optimizer, criterion):
         
         # one validation step (to fail early as a test)
         val_dist = evaluate(val_loader, model)
-        val_dist_list.append(val_dist.item())
+        val_dist_list.append(val_dist)
         writer.add_scalar('Distance (Epoch)/Val', val_dist.item(), epoch)
 
     plot_loss(train_loss_list, train_torch_loss_list, "Epoch")
