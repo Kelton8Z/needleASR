@@ -41,7 +41,7 @@ DEBUG = False
 
 epochs = 2
 train_config = {
-    "beam_width" : 2,
+    "beam_width" : 1,
     "epochs" : epochs,
     'batch_size' : batch_size,
     'learning_rate' : 1e-5,
@@ -196,6 +196,7 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
     
     # Get beam search results
     beam_results = generate(h, beam_width=train_config["beam_width"], blank_id=0, vocab=labels)
+    print(f"decode results: {beam_results[0][0]}")
     
     batch_size = h.shape[0]
     distance = 0
@@ -233,32 +234,27 @@ writer = SummaryWriter(log_dir)
 
 def evaluate(data_loader, model):
     val_dist = 0
-    val_loss = 0
-    batch_bar = tqdm(total=len(data_loader), dynamic_ncols=True, leave=False, position=0, desc='Val') 
+    batch_bar = tqdm(total=len(data_loader), dynamic_ncols=True, leave=True, position=0, desc='Val') 
     model.eval()
     for i, data in enumerate(data_loader):
         x, y, len_x, len_y = data
         x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
         output = model(x)
-
-        loss = criterion(output, y, len_x, len_y)
-        val_loss += loss
-
-        batch_bar.set_postfix(
-            loss = f"{loss.numpy()/(i+1):.4f}"
-        )
-        batch_bar.update()
           
         dist = calculate_levenshtein(output, y, len_x, len_y, LABELS, debug=False)
+        batch_bar.set_postfix(
+            dist = f"{dist.numpy()/(i+1):.4f}"
+        )
+        batch_bar.update()
+
         val_dist += dist
 
         del x, y, len_x, len_y
             
     batch_bar.close()
-    val_loss /= len(data_loader)
     val_dist /= len(data_loader)
 
-    return val_loss, val_dist
+    return val_dist
 
 # This is for checkpointing over multiple sessions
 
@@ -298,7 +294,6 @@ def train_step(train_loader, model, optimizer, criterion, epoch):
         )
         train_loss_steps.append(loss.numpy())
         torch_train_loss_steps.append(torch_loss.item())
-        print(f"our loss: {loss}, torch loss: {torch_loss}")
 
         writer.add_scalar('Loss (Step)/Needle', loss.numpy(), epoch * len(train_loader) + i)
         writer.add_scalar('Loss (Step)/PyTorch', torch_loss.item(), epoch * len(train_loader) + i)
@@ -313,7 +308,8 @@ def train_step(train_loader, model, optimizer, criterion, epoch):
             print(f"parameters updated: {parameters_updated}")
 
         batch_bar.set_postfix(
-            loss = f"{loss.numpy()/(i+1):.4f}"
+            our_loss=f"{loss.numpy()/(i+1):.4f}",
+            torch_loss=f"{torch_loss.item()/(i+1):.4f}"
         )
         batch_bar.update()
 
@@ -379,11 +375,8 @@ def train_asr(train_loader, val_loader, model, optimizer, criterion):
         writer.flush()
         
         # one validation step (to fail early as a test)
-        val_loss, val_dist = evaluate(val_loader, model)
-        val_loss_list.append(val_loss.numpy())
+        val_dist = evaluate(val_loader, model)
         val_dist_list.append(val_dist.item())
-        print(f"val_loss: {val_loss}, val_dist: {val_dist}")
-        writer.add_scalar('Loss (Epoch)/Val', val_loss.numpy(), epoch)
         writer.add_scalar('Distance (Epoch)/Val', val_dist.item(), epoch)
 
     plot_loss(train_loss_list, train_torch_loss_list, "Epoch")
