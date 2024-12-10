@@ -39,7 +39,7 @@ LABELS = ARPAbet = list(vocab.keys())
 OUT_SIZE = len(LABELS)
 DEBUG = False
 
-epochs = 2
+epochs = 1
 train_config = {
     "beam_width" : 1,
     "epochs" : epochs,
@@ -51,16 +51,16 @@ train_config = {
 
 gc.collect()
 
-dir = 'data/toy_librispeech/'
+dir = 'data/mini_librispeech_toy/'
 
 print("Initialize train dataset")
-train_data = ASRDataset(dir, "train", feat_dim=input_dim, trunc=dataset_trunc_train, max_len_feat=137, max_len_transcript=62)
+train_data = ASRDataset(dir, "train", feat_dim=input_dim, trunc=dataset_trunc_train, max_len_feat=341, max_len_transcript=149)
 
 print("Initialize val dataset")
-val_data = ASRDataset(dir, "dev", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=137, max_len_transcript=62)
+val_data = ASRDataset(dir, "dev", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=341, max_len_transcript=149)
 
 print("Initialize test dataset")
-test_data = ASRDataset(dir, "test", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=137, max_len_transcript=62)
+test_data = ASRDataset(dir, "test", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=341, max_len_transcript=149)
 
 # Do NOT forget to pass in the collate function as parameter while creating the dataloader
 train_loader = ndl.data.DataLoader(
