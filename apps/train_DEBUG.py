@@ -197,7 +197,7 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
     
     batch_size = h.shape[0]
     distance = 0
-    y = y.numpy()
+    y, ly = y.numpy(), ly.numpy()
     
     for i in range(batch_size):
         # Get the best hypothesis (first result) for this sequence
