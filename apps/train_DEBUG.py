@@ -28,7 +28,7 @@ num_layers = 1
 num_head = 2
 dim_head = 4
 causal = False
-dataset_trunc_train = 4
+dataset_trunc_train = 1
 dataset_trunc_dev = 1
 
 char_tokenizer = CharTokenizer()
@@ -83,18 +83,14 @@ test_loader = ndl.data.DataLoader(
     collate_fn=train_data.collate_fn
 )
 
-print("Batch size: ", train_config['batch_size'])
-print("Train dataset samples = {}, batches = {}".format(len(train_data), len(train_loader.dataset)))
-print("Val dataset samples = {}, batches = {}".format(len(val_data), len(val_loader.dataset)))
-print("Test dataset samples = {}, batches = {}".format(len(test_data), len(test_loader.dataset)))
-
 # Sanity check: data loader
+print(f"Sanity check: data loader")
 i= 0
 for data in train_loader:
     x, y, lx, ly = data
     feat_seq_len_train = x.shape[1]
     print("Train data")
-    print(x.shape, y.shape, lx.shape, ly.shape)
+    print(f"x shape: {x.shape} y shape: {y.shape} lx shape: {lx.shape} ly shape: {ly.shape}")
     print(f"feat_seq_len: {feat_seq_len_train}")
     i += 1
     if i == 2:
@@ -103,7 +99,7 @@ for data in val_loader:
     x, y, lx, ly = data
     feat_seq_len_val = x.shape[1]
     print("Val data")
-    print(x.shape, y.shape, lx.shape, ly.shape)
+    print(f"x shape: {x.shape} y shape: {y.shape} lx shape: {lx.shape} ly shape: {ly.shape}")
     print(f"feat_seq_len: {feat_seq_len_val}")
     i += 1
     if i == 2:
@@ -112,7 +108,7 @@ for data in test_loader:
     x, y, lx, ly = data
     feat_seq_len_test = x.shape[1]
     print("Test data")
-    print(x.shape, y.shape, lx.shape, ly.shape)
+    print(f"x shape: {x.shape} y shape: {y.shape} lx shape: {lx.shape} ly shape: {ly.shape}")
     print(f"feat_seq_len: {feat_seq_len_test}")
     i += 1
     if i == 2:
@@ -273,7 +269,7 @@ best_val_dist = float("inf") # if restarting from some checkpoint, use that last
 dist_freq = 1
 
 def train_step(train_loader, model, optimizer, criterion, epoch):
-    batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, leave=False, position=0, desc='Train') 
+    batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, leave=True, position=0, desc='Train') 
     print('\n')
     train_loss = torch_train_loss = 0
     train_loss_steps = []
@@ -284,8 +280,6 @@ def train_step(train_loader, model, optimizer, criterion, epoch):
         optimizer.zero_grad()
         x, y, len_x, len_y = data
         x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
-        print(f"x shape: {x.shape}")
-        print(f"y shape: {y.shape}")
 
         output = model(x)
         output = nn.ops.logsoftmax(output)
@@ -385,12 +379,12 @@ def train_asr(train_loader, val_loader, model, optimizer, criterion):
         writer.flush()
         
         # one validation step (to fail early as a test)
-        # val_loss, val_dist = evaluate(val_loader, model)
-        # val_loss_list.append(val_loss.numpy())
-        # val_dist_list.append(val_dist.item())
-        # print(f"val_loss: {val_loss}, val_dist: {val_dist}")
-        # writer.add_scalar('Loss (Epoch)/Val', val_loss.numpy(), epoch)
-        # writer.add_scalar('Distance (Epoch)/Val', val_dist.item(), epoch)
+        val_loss, val_dist = evaluate(val_loader, model)
+        val_loss_list.append(val_loss.numpy())
+        val_dist_list.append(val_dist.item())
+        print(f"val_loss: {val_loss}, val_dist: {val_dist}")
+        writer.add_scalar('Loss (Epoch)/Val', val_loss.numpy(), epoch)
+        writer.add_scalar('Distance (Epoch)/Val', val_dist.item(), epoch)
 
     plot_loss(train_loss_list, train_torch_loss_list, "Epoch")
     # plot_dist(val_dist_list)
