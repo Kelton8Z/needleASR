@@ -116,11 +116,11 @@ def test_repeated_chars():
     
     print("Beam width: 3")
     for batch_idx, batch_results in enumerate(results):
-        print(f"\nBatch {batch_idx + 1}:")
+        print(f"\nSequence {batch_idx + 1}:")
         print("Input sequence:", "".join([vocab[s] for s in (sequence1 if batch_idx == 0 else sequence2)]))
         print("Beam search results:")
         for seq, log_prob in batch_results:
-            print(f"Decoded sequence: '{seq}' \n Log probability: {log_prob:.4f}")
+            print(f"Decoded sequence: '{seq}' \nLog probability: {log_prob:.4f}")
         
 if __name__ == "__main__":
     test_repeated_chars()
