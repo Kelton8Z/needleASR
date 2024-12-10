@@ -28,7 +28,7 @@ num_layers = 1
 num_head = 2
 dim_head = 4
 causal = False
-dataset_trunc_train = 1
+dataset_trunc_train = 2
 dataset_trunc_dev = 1
 
 char_tokenizer = CharTokenizer()
@@ -39,7 +39,7 @@ LABELS = ARPAbet = list(vocab.keys())
 OUT_SIZE = len(LABELS)
 DEBUG = False
 
-epochs = 3
+epochs =2
 train_config = {
     "beam_width" : 1,
     "epochs" : epochs,
@@ -211,8 +211,8 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
         y_string = "".join(str(ARPAbet[int(j)]) for j in y_sliced)
         
         # Calculate Levenshtein distance
-        print(f"Decoded transcript: {h_string}")
-        print(f"Target transcript: {y_string}")
+        # print(f"Decoded transcript: {h_string}")
+        # print(f"Target transcript: {y_string}")
         distance += Levenshtein.distance(h_string, y_string)
         
         if debug:
