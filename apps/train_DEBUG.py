@@ -266,7 +266,6 @@ dist_freq = 1
 
 def train_step(train_loader, model, optimizer, criterion, epoch):
     batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, leave=True, position=0, desc='Train') 
-    print('\n')
     train_loss = torch_train_loss = 0
     train_loss_steps = []
     torch_train_loss_steps = []
