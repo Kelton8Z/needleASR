@@ -191,12 +191,10 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
     """
     if debug:
         print(f'h shape {h.shape}')
-
-    h, y, lh, ly = h.numpy(), y.numpy(), lh.numpy(), ly.numpy()
     
     # Get beam search results
     beam_results = generate(h, beam_width=train_config["beam_width"], blank_id=0, vocab=labels)
-    print(f"decode results: {beam_results[0][0]}")
+    beam_results = beam_results.numpy()
     
     batch_size = h.shape[0]
     distance = 0
@@ -213,6 +211,8 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
         y_string = "".join(str(ARPAbet[int(j)]) for j in y_sliced)
         
         # Calculate Levenshtein distance
+        print(f"Decoded transcript: {h_string}")
+        print(f"Target transcript: {y_string}")
         distance += Levenshtein.distance(h_string, y_string)
         
         if debug:
