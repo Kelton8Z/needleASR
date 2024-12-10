@@ -82,8 +82,6 @@ class ASRDataset(Dataset):
         self.max_len_transcript = max_len_transcript
     
     def __getitem__(self, index):
-        print(f"len_feat: {self.feats[index].shape}")
-        print(f"len_transcript: {self.transcript_tokens[index].shape}")
         return self.feats[index], self.transcript_tokens[index]
 
     def __len__(self):

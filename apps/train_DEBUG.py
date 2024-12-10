@@ -54,13 +54,13 @@ gc.collect()
 dir = 'data/toy_librispeech/'
 
 print("Initialize train dataset")
-train_data = ASRDataset(dir, "train", feat_dim=input_dim, trunc=dataset_trunc_train, max_len_feat=341, max_len_transcript=149)
+train_data = ASRDataset(dir, "train", feat_dim=input_dim, trunc=dataset_trunc_train, max_len_feat=137, max_len_transcript=62)
 
 print("Initialize val dataset")
-val_data = ASRDataset(dir, "dev", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=341, max_len_transcript=149)
+val_data = ASRDataset(dir, "dev", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=137, max_len_transcript=62)
 
 print("Initialize test dataset")
-test_data = ASRDataset(dir, "test", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=341, max_len_transcript=149)
+test_data = ASRDataset(dir, "test", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=137, max_len_transcript=62)
 
 # Do NOT forget to pass in the collate function as parameter while creating the dataloader
 train_loader = ndl.data.DataLoader(
