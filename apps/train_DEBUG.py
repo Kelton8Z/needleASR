@@ -39,7 +39,7 @@ LABELS = ARPAbet = list(vocab.keys())
 OUT_SIZE = len(LABELS)
 DEBUG = False
 
-epochs = 2
+epochs = 3
 train_config = {
     "beam_width" : 1,
     "epochs" : epochs,
@@ -365,13 +365,13 @@ def train_asr(train_loader, val_loader, model, optimizer, criterion):
 
     for epoch in range(train_config["epochs"]):
         # one training step
-        # train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion, epoch)
-        # train_loss_list.append(train_loss.numpy())
-        # train_torch_loss_list.append(torch_train_loss.item())
-        # writer.add_scalar('Loss (Epoch)/NeedleTrain', train_loss.numpy(), epoch)
-        # writer.add_scalar('Loss (Epoch)/PyTorchTrain', torch_train_loss.item(), epoch)
-        # writer.add_scalars('Losses (Epoch)', {'NeedleTrain': train_loss.numpy(), 'PyTorchTrain': torch_train_loss.item()}, epoch)
-        # writer.flush()
+        train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion, epoch)
+        train_loss_list.append(train_loss.numpy())
+        train_torch_loss_list.append(torch_train_loss.item())
+        writer.add_scalar('Loss (Epoch)/NeedleTrain', train_loss.numpy(), epoch)
+        writer.add_scalar('Loss (Epoch)/PyTorchTrain', torch_train_loss.item(), epoch)
+        writer.add_scalars('Losses (Epoch)', {'NeedleTrain': train_loss.numpy(), 'PyTorchTrain': torch_train_loss.item()}, epoch)
+        writer.flush()
         
         # one validation step (to fail early as a test)
         val_dist = evaluate(val_loader, model)
