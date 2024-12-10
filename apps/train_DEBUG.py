@@ -28,7 +28,7 @@ num_layers = 1
 num_head = 2
 dim_head = 4
 causal = False
-dataset_trunc_train = 2
+dataset_trunc_train = 1
 dataset_trunc_dev = 1
 
 char_tokenizer = CharTokenizer()
@@ -39,7 +39,7 @@ LABELS = ARPAbet = list(vocab.keys())
 OUT_SIZE = len(LABELS)
 DEBUG = False
 
-epochs =2
+epochs = 2
 train_config = {
     "beam_width" : 1,
     "epochs" : epochs,
@@ -51,7 +51,7 @@ train_config = {
 
 gc.collect()
 
-dir = 'data/mini_librispeech_toy/'
+dir = 'data/toy_librispeech/'
 
 print("Initialize train dataset")
 train_data = ASRDataset(dir, "train", feat_dim=input_dim, trunc=dataset_trunc_train, max_len_feat=341, max_len_transcript=149)
