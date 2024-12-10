@@ -376,7 +376,7 @@ def train_asr(train_loader, val_loader, model, optimizer, criterion):
         # one validation step (to fail early as a test)
         val_dist = evaluate(val_loader, model)
         val_dist_list.append(val_dist)
-        writer.add_scalar('Distance (Epoch)/Val', val_dist.item(), epoch)
+        writer.add_scalar('Distance (Epoch)/Val', val_dist, epoch)
 
     plot_loss(train_loss_list, train_torch_loss_list, "Epoch")
     # plot_dist(val_dist_list)
