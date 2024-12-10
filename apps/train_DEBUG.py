@@ -194,7 +194,6 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
     
     # Get beam search results
     beam_results = generate(h, beam_width=train_config["beam_width"], blank_id=0, vocab=labels)
-    beam_results = beam_results.numpy()
     
     batch_size = h.shape[0]
     distance = 0
@@ -365,13 +364,13 @@ def train_asr(train_loader, val_loader, model, optimizer, criterion):
 
     for epoch in range(train_config["epochs"]):
         # one training step
-        train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion, epoch)
-        train_loss_list.append(train_loss.numpy())
-        train_torch_loss_list.append(torch_train_loss.item())
-        writer.add_scalar('Loss (Epoch)/NeedleTrain', train_loss.numpy(), epoch)
-        writer.add_scalar('Loss (Epoch)/PyTorchTrain', torch_train_loss.item(), epoch)
-        writer.add_scalars('Losses (Epoch)', {'NeedleTrain': train_loss.numpy(), 'PyTorchTrain': torch_train_loss.item()}, epoch)
-        writer.flush()
+        # train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion, epoch)
+        # train_loss_list.append(train_loss.numpy())
+        # train_torch_loss_list.append(torch_train_loss.item())
+        # writer.add_scalar('Loss (Epoch)/NeedleTrain', train_loss.numpy(), epoch)
+        # writer.add_scalar('Loss (Epoch)/PyTorchTrain', torch_train_loss.item(), epoch)
+        # writer.add_scalars('Losses (Epoch)', {'NeedleTrain': train_loss.numpy(), 'PyTorchTrain': torch_train_loss.item()}, epoch)
+        # writer.flush()
         
         # one validation step (to fail early as a test)
         val_dist = evaluate(val_loader, model)
