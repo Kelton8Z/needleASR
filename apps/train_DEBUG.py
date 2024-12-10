@@ -15,20 +15,21 @@ from decoding import generate
 from needle.data.datasets.librispeech_dataset import CharTokenizer
 from matplotlib import pyplot as plt
 
-device = ndl.cuda()
+device = ndl.cpu()
 
 # import wandb
 # wandb.login(key=os.environ['WANDB_KEY'])
 
 dropout = 0.1
 batch_size = 1
-seq_len = 5
-input_dim = 40
-hidden_size = 64
+input_dim = 2
+hidden_size = 4
 num_layers = 1
 num_head = 2
-dim_head = 16
+dim_head = 4
 causal = False
+dataset_trunc_train = 4
+dataset_trunc_dev = 1
 
 char_tokenizer = CharTokenizer()
 vocab = char_tokenizer.vocab # a dictionary mapping characters to integers
@@ -36,57 +37,50 @@ inv_vocab = char_tokenizer.inv_vocab # a dictionary mapping integers to characte
 
 LABELS = ARPAbet = list(vocab.keys())
 OUT_SIZE = len(LABELS)
+DEBUG = False
 
-epochs = 50
+epochs = 2
 train_config = {
     "beam_width" : 2,
     "epochs" : epochs,
     'batch_size' : batch_size,
-    'learning_rate' : 0.001,
+    'learning_rate' : 1e-5,
     'dropout_p' : dropout,
     'architecture' : 'transformer'                                    
 }
-
-# run = wandb.init(
-#     name = "transformer with CTC", ## Wandb creates random run names if you skip this field
-#     reinit = True, ### Allows reinitalizing runs when you re-run this cell
-#     # run_id = ### Insert specific run id here if you want to resume a previous run
-#     # resume = "must" ### You need this to resume previous runs, but comment out reinit = True when using this
-#     project = "needle-asr", ### Project should be created in your wandb account 
-#     config = train_config ### Wandb Config for your run
-# )
 
 gc.collect()
 
 dir = 'data/mini_librispeech_toy/'
 
 print("Initialize train dataset")
-train_data = ASRDataset(dir, "train")
+train_data = ASRDataset(dir, "train", feat_dim=input_dim, trunc=dataset_trunc_train, max_len_feat=341, max_len_transcript=149)
 
 print("Initialize val dataset")
-val_data = ASRDataset(dir, "dev")
+val_data = ASRDataset(dir, "dev", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=341, max_len_transcript=149)
 
 print("Initialize test dataset")
-test_data = ASRDataset(dir, "test")
+test_data = ASRDataset(dir, "test", feat_dim=input_dim, trunc=dataset_trunc_dev, max_len_feat=341, max_len_transcript=149)
 
 # Do NOT forget to pass in the collate function as parameter while creating the dataloader
 train_loader = ndl.data.DataLoader(
     train_data, 
     batch_size=train_config['batch_size'], 
     shuffle=False, 
+    # collate_fn=train_data.collate_fn if train_config['batch_size'] > 1 else train_data.collate_fn_batch_1
     collate_fn=train_data.collate_fn
 )
 val_loader = ndl.data.DataLoader(
     val_data, 
     batch_size=train_config['batch_size'], 
     shuffle=False, 
-    collate_fn=val_data.collate_fn
+    collate_fn=train_data.collate_fn
 )
 test_loader = ndl.data.DataLoader(
     test_data, 
     batch_size=train_config['batch_size'],
     shuffle=False, 
-    collate_fn=test_data.collate_fn
+    collate_fn=train_data.collate_fn
 )
 
 print("Batch size: ", train_config['batch_size'])
@@ -98,12 +92,31 @@ print("Test dataset samples = {}, batches = {}".format(len(test_data), len(test_
 i= 0
 for data in train_loader:
     x, y, lx, ly = data
-    feat_seq_len = x.shape[1]
+    feat_seq_len_train = x.shape[1]
+    print("Train data")
     print(x.shape, y.shape, lx.shape, ly.shape)
-    print(f"feat_seq_len: {feat_seq_len}")
+    print(f"feat_seq_len: {feat_seq_len_train}")
     i += 1
     if i == 2:
         break 
+for data in val_loader:
+    x, y, lx, ly = data
+    feat_seq_len_val = x.shape[1]
+    print("Val data")
+    print(x.shape, y.shape, lx.shape, ly.shape)
+    print(f"feat_seq_len: {feat_seq_len_val}")
+    i += 1
+    if i == 2:
+        break
+for data in test_loader:
+    x, y, lx, ly = data
+    feat_seq_len_test = x.shape[1]
+    print("Test data")
+    print(x.shape, y.shape, lx.shape, ly.shape)
+    print(f"feat_seq_len: {feat_seq_len_test}")
+    i += 1
+    if i == 2:
+        break
 
 class ASRModel(nn.Module):
     def __init__(
@@ -119,6 +132,7 @@ class ASRModel(nn.Module):
         dtype, 
         batch_first, 
         sequence_len, 
+        if_positional_embedding, 
         vocal_size=OUT_SIZE
     ):
         self.encoder = nn.Transformer(
@@ -132,7 +146,8 @@ class ASRModel(nn.Module):
             device=device, 
             dtype=dtype, 
             batch_first=batch_first, 
-            sequence_len=sequence_len
+            sequence_len=sequence_len, 
+            if_positional_embedding=if_positional_embedding
         )
         self.linear = nn.Linear(input_dim, vocal_size, device=device, dtype=dtype)
         
@@ -153,7 +168,8 @@ model = ASRModel(
     device=device, 
     dtype="float32", 
     batch_first=True, 
-    sequence_len=feat_seq_len, 
+    sequence_len=feat_seq_len_train, 
+    if_positional_embedding=True, 
     vocal_size=OUT_SIZE
 )
 
@@ -179,6 +195,8 @@ def calculate_levenshtein(h, y, lh, ly, labels, debug=False):
     """
     if debug:
         print(f'h shape {h.shape}')
+
+    h, y, lh, ly = h.numpy(), y.numpy(), lh.numpy(), ly.numpy()
     
     # Get beam search results
     beam_results = generate(h, beam_width=train_config["beam_width"], blank_id=0, vocab=labels)
@@ -216,62 +234,6 @@ from torch.utils.tensorboard import SummaryWriter
 log_dir = f"runs/training_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
 writer = SummaryWriter(log_dir)
 
-# Sanity check: model forward pass
-# for i, data in enumerate(train_loader):
-
-#     x, y, len_x, len_y = data
-#     print(f"x shape: {x.shape}")
-#     print(f"y shape: {y.shape}")
-#     print(f"len_x shape: {len_x.shape}")
-#     print(f"len_y shape: {len_y.shape}")
-
-#     x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
-#     print(f"x device: {x.device}")
-#     print(f"y device: {y.device}")
-
-#     output = model(x)
-#     output = nn.ops.logsoftmax(output)
-
-#     print(f"output shape: {output.shape}")
-#     print(f"output type: {type(output)}")
-#     print(f"output device: {output.device}")
-    
-#     print(f"y device: {y.device}")
-#     print(f"len_x device: {len_x.device}")
-#     print(f"len_y device: {len_y.device}")
-#     # print(f"output: {output}")
-#     print(f"y: {y}")
-#     print(f"len_x: {len_x}")
-#     print(f"len_y: {len_y}")
-#     # x_len_tup = tuple(map(int, len_x.detach().numpy().flatten()))
-#     # y_len_tup = tuple(map(int, len_y.detach().numpy().flatten()))
-#     t1 = time.time()
-#     torch_loss = torch_criterion(
-#         torch.tensor(output.transpose((0, 1)).detach().numpy(), dtype=torch.float32), 
-#         torch.tensor(y.detach().numpy(), dtype=torch.float32), 
-#         torch.tensor(len_x.detach().numpy(), dtype=torch.int32), 
-#         torch.tensor(len_y.detach().numpy(), dtype=torch.int32)
-#     )
-
-#     t2 = time.time()
-#     print(f"torch loss: {torch_loss}, after {t2-t1:.2f} seconds")
-
-#     t3 = time.time()
-#     loss = criterion(output, y, len_x, len_y)
-#     t4 = time.time()
-#     print(f"our loss: {loss}, after {t4-t3:.2f} seconds")
-
-#     loss.backward()
-
-#     if np.linalg.norm(torch_loss.detach().numpy() - loss.detach().numpy()) > 1e-4:
-#         print("Loss mismatch")
-#         break
-
-#     distance = calculate_levenshtein(output, y.detach().numpy(), len_x, len_y.detach().numpy(), LABELS, debug = True)
-#     print(f"lev-distance: {distance}")
-
-#     break
-
 
 def evaluate(data_loader, model):
     val_dist = 0
@@ -287,8 +249,7 @@ def evaluate(data_loader, model):
         val_loss += loss
 
         batch_bar.set_postfix(
-            loss = f"{loss/(i+1):.4f}",
-            lr = f"{optimizer.param_groups[0]['lr']}"
+            loss = f"{loss.numpy()/(i+1):.4f}"
         )
         batch_bar.update()
           
@@ -313,34 +274,60 @@ dist_freq = 1
 
 def train_step(train_loader, model, optimizer, criterion, epoch):
     batch_bar = tqdm(total=len(train_loader), dynamic_ncols=True, leave=False, position=0, desc='Train') 
+    print('\n')
     train_loss = torch_train_loss = 0
+    train_loss_steps = []
+    torch_train_loss_steps = []
 
     model.train()
-    for i, data in tqdm(enumerate(train_loader), desc=f"Train epoch {epoch}"):
+    for i, data in enumerate(train_loader):
         optimizer.zero_grad()
         x, y, len_x, len_y = data
         x, y, len_x, len_y = x.to(device), y.to(device), len_x.to(device), len_y.to(device)
+        print(f"x shape: {x.shape}")
+        print(f"y shape: {y.shape}")
+
         output = model(x)
         output = nn.ops.logsoftmax(output)
+
+        if DEBUG:
+            parameters = model.parameters()
+            print(f"parameters: {parameters}")
+
+        
         loss = criterion(output, y, len_x, len_y)
         torch_loss = torch_criterion(
-            torch.tensor(output.transpose((0, 1)).detach().numpy(), dtype=torch.float32), 
-            torch.tensor(y.detach().numpy(), dtype=torch.float32), 
-            torch.tensor(len_x.detach().numpy(), dtype=torch.int32), 
-            torch.tensor(len_y.detach().numpy(), dtype=torch.int32)
+            torch.tensor(output.transpose((0, 1)).numpy(), dtype=torch.float32), 
+            torch.tensor(y.numpy(), dtype=torch.float32), 
+            torch.tensor(len_x.numpy(), dtype=torch.int32), 
+            torch.tensor(len_y.numpy(), dtype=torch.int32)
         )
+        train_loss_steps.append(loss.numpy())
+        torch_train_loss_steps.append(torch_loss.item())
+        print(f"our loss: {loss}, torch loss: {torch_loss}")
+
+        writer.add_scalar('Loss (Step)/Needle', loss.numpy(), epoch * len(train_loader) + i)
+        writer.add_scalar('Loss (Step)/PyTorch', torch_loss.item(), epoch * len(train_loader) + i)
+        writer.add_scalars('Losses (Step)', {'Needle': loss.numpy(), 'PyTorch': torch_loss.item()}, epoch * len(train_loader) + i)
+        writer.flush()
 
         loss.backward()
         optimizer.step()
 
+        if DEBUG:
+            parameters_updated = model.parameters()
+            print(f"parameters updated: {parameters_updated}")
+
         batch_bar.set_postfix(
-            loss = f"{loss.realize_cached_data().numpy()/(i+1):.4f}"
+            loss = f"{loss.numpy()/(i+1):.4f}"
         )
         batch_bar.update()
 
         train_loss += loss
         torch_train_loss += torch_loss
     
+    plot_loss(train_loss_steps, torch_train_loss_steps, f"Step @ Epoch {epoch}", epoch)
+
     batch_bar.close()
     train_loss /= len(train_loader) 
     torch_train_loss /= len(train_loader)
@@ -348,32 +335,66 @@ def train_step(train_loader, model, optimizer, criterion, epoch):
 
     return train_loss, torch_train_loss
 
-def plot_loss(train_loss_list, train_torch_loss_list):
+def plot_loss(train_loss_list, train_torch_loss_list, xlabel, epoch=None):
     plt.figure(figsize=(10, 6))
     plt.plot(train_loss_list, label="Needle loss")
     plt.plot(train_torch_loss_list, label="PyTorch loss")
-    plt.xlabel("Epoch")
+    plt.xlabel(f"{xlabel}")
     plt.ylabel("Loss")
     plt.title("Training loss")
     plt.legend()
-    plt.savefig("train_loss.png")
+    if epoch == None:
+        plt.savefig(f"train_loss_total.png")
+    else:
+        plt.savefig(f"train_loss_ep{epoch}.png")
+    plt.close()
+
+def plot_dist(val_dist_list, xlabel="Epoch"):
+    plt.figure(figsize=(10, 6))
+    plt.plot(val_dist_list, label="Levenshtein distance")
+    plt.xlabel(f"{xlabel}")
+    plt.ylabel("Distance")
+    plt.title("Validation distance")
+    plt.legend()
+    plt.savefig(f"val_dist.png")
+
+def plot_val_loss(val_loss_list, xlabel="Epoch"):
+    plt.figure(figsize=(10, 6))
+    plt.plot(val_loss_list, label="Validation loss")
+    plt.xlabel(f"{xlabel}")
+    plt.ylabel("Loss")
+    plt.title("Validation loss")
+    plt.legend()
+    plt.savefig(f"val_loss.png")
 
 # The training loop
 def train_asr(train_loader, val_loader, model, optimizer, criterion):
     train_loss_list = []
     train_torch_loss_list = []
+    val_dist_list = []
+    val_loss_list = []
 
     for epoch in range(train_config["epochs"]):
         # one training step
         train_loss, torch_train_loss = train_step(train_loader, model, optimizer, criterion, epoch)
-        train_loss_list.append(train_loss)
-        train_torch_loss_list.append(torch_train_loss)
+        train_loss_list.append(train_loss.numpy())
+        train_torch_loss_list.append(torch_train_loss.item())
+        writer.add_scalar('Loss (Epoch)/NeedleTrain', train_loss.numpy(), epoch)
+        writer.add_scalar('Loss (Epoch)/PyTorchTrain', torch_train_loss.item(), epoch)
+        writer.add_scalars('Losses (Epoch)', {'NeedleTrain': train_loss.numpy(), 'PyTorchTrain': torch_train_loss.item()}, epoch)
+        writer.flush()
         
         # one validation step (to fail early as a test)
-        val_loss, val_dist = evaluate(val_loader, model)
-        print(f"val_loss: {val_loss}, val_dist: {val_dist}")
+        # val_loss, val_dist = evaluate(val_loader, model)
+        # val_loss_list.append(val_loss.numpy())
+        # val_dist_list.append(val_dist.item())
+        # print(f"val_loss: {val_loss}, val_dist: {val_dist}")
+        # writer.add_scalar('Loss (Epoch)/Val', val_loss.numpy(), epoch)
+        # writer.add_scalar('Distance (Epoch)/Val', val_dist.item(), epoch)
 
-    plot_loss(train_loss_list, train_torch_loss_list)
+    plot_loss(train_loss_list, train_torch_loss_list, "Epoch")
+    # plot_dist(val_dist_list)
+    # plot_val_loss(val_loss_list)
         
 scheduler = None
 train_asr(train_loader, val_loader, model, optimizer, criterion)
