@@ -72,7 +72,9 @@ class DataLoader:
         return self
     
     def __len__(self):
-        return len(self.dataset) // self.batch_size + 1 # don't drop the last batch
+        if self.batch_size is None:
+            return len(self.dataset)
+        return (len(self.dataset) + self.batch_size - 1) // self.batch_size # don't drop the last batch
 
     def __next__(self):
         ### BEGIN YOUR SOLUTION

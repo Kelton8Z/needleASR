@@ -353,7 +353,8 @@ class Transformer(Module):
         device = None,
         dtype = "float32",
         batch_first = False,
-        sequence_len = 2048
+        sequence_len = 2048, 
+        if_positional_embedding = False
     ):
 
         super().__init__()
@@ -365,10 +366,13 @@ class Transformer(Module):
 
         ### BEGIN YOUR SOLUTION
         # Author: Qingzheng Wang
-        self.positional_encoder = Embedding(
-            num_embeddings=sequence_len, embedding_dim=embedding_size, 
-            device=self.device, dtype=self.dtype
-        )
+        self.if_positional_embedding = if_positional_embedding
+        if if_positional_embedding:
+            self.positional_encoder = Embedding(
+                num_embeddings=sequence_len, embedding_dim=embedding_size, 
+                device=self.device, dtype=self.dtype
+            )
+            
         self.transformer = Sequential(*[
             TransformerLayer(
                 embedding_size, num_head, dim_head, hidden_size, 
@@ -394,15 +398,13 @@ class Transformer(Module):
         time_ids = np.arange(seq_len).reshape(-1, 1)
         time_ids = ndarray.array(time_ids, device=self.device).broadcast_to((seq_len, batch_size))
         time_ids = Tensor(time_ids, device=self.device, dtype=self.dtype)
-        positional_embedding = self.positional_encoder(time_ids) # (seq_len, batch_size, embedding_size)
-        positional_embedding = positional_embedding.transpose((0, 1))
 
-        print(f"positional_embedding shape: {positional_embedding.shape}")
-        x = x + positional_embedding
-        print("transformer forward 1")
+        if self.if_positional_embedding:
+            positional_embedding = self.positional_encoder(time_ids) # (seq_len, batch_size, embedding_size)
+            positional_embedding = positional_embedding.transpose((0, 1))
+            x = x + positional_embedding
+        
         x = self.transformer(x)
-        print("transformer forward 2")
-        print(f"x shape: {x.shape}")
         ### END YOUR SOLUTION
 
         if not self.batch_first:

@@ -15,11 +15,6 @@ def randn(*shape, mean=0.0, std=1.0, device=None, dtype="float32", requires_grad
     array = device.randn(*shape) * std + mean
     return ndl.Tensor(array, device=device, dtype=dtype, requires_grad=requires_grad)
 
-
-
-
-
-
 def constant(*shape, c=1.0, device=None, dtype="float32", requires_grad=False):
     """Generate constant Tensor"""
     device = ndl.cpu() if device is None else device

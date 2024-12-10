@@ -908,7 +908,7 @@ class CTC:
 
         return beta, scale
 
-    def get_posterior_probs(self, alpha, beta):
+    def get_posterior_probs(self, alpha, beta, use_beta=False):
         T, S = alpha.shape
         gamma = array_api.full((T, S), scalar_t(0), dtype="float32", device=alpha.device)
         
@@ -919,7 +919,10 @@ class CTC:
             
             for s in range(S):
                 if alpha[t, s] > scalar_t(MIN_VAL) and beta[t, s] > scalar_t(MIN_VAL):
-                    curr_val = scalar_t((alpha[t, s] + beta[t, s]).numpy())
+                    if use_beta:
+                        curr_val = scalar_t((alpha[t, s] + beta[t, s]).numpy())
+                    else:
+                        curr_val = scalar_t((alpha[t, s]).numpy())
                     max_val = max(max_val, curr_val)
                     valid_pos.append((s, curr_val))
             
@@ -1054,7 +1057,7 @@ class CTCLoss(TensorOp):
 
                 print("=================== Posterior ===================")
 
-            gamma = self.ctc.get_posterior_probs(alpha, beta)
+            gamma = self.ctc.get_posterior_probs(alpha, beta, use_beta=True)
             assert not any(map(lambda x: x!=x, gamma.numpy().flatten())), "gamma contain NaN values"
 
             if DEBUG:

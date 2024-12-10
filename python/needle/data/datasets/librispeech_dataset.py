@@ -57,7 +57,10 @@ class ASRDataset(Dataset):
             base_dir, 
             dataset_type, 
             feat_type="fbank", 
-            feat_dim=40
+            feat_dim=40, 
+            trunc=None, 
+            max_len_feat=341, 
+            max_len_transcript=149
         ):
         self.dataset_dir = os.path.join(base_dir, dataset_type)
         self.dataset_type = dataset_type
@@ -70,20 +73,25 @@ class ASRDataset(Dataset):
         self.feats = [self.get_feat(flac, feat_type, feat_dim) for flac in tqdm(self.flac_list, desc="feat init")]
         self.transcript_tokens = [self.get_transcript_token(transcript) for transcript in tqdm(self.transcripts, desc="transcript init")]
 
-        self.max_len_feat = max([len(feat) for feat in self.feats])
-        self.max_len_transcript = max([len(transcript) for transcript in self.transcript_tokens])
+        if trunc is not None:
+            assert trunc <= len(self.feats), f"truncation length {trunc} is larger than dataset size {len(self.feats)}"
+            self.feats = self.feats[:trunc]
+            self.transcript_tokens = self.transcript_tokens[:trunc]
+
+        self.max_len_feat = max_len_feat
+        self.max_len_transcript = max_len_transcript
     
     def __getitem__(self, index):
-        
+
         return self.feats[index], self.transcript_tokens[index]
 
     def __len__(self):
-        assert len(self.flac_list) == len(self.transcripts), (
-            f"Number of flac files {len(self.flac_list)} and "
-            f"transcripts {len(self.transcripts)} do not match"
+        assert len(self.feats) == len(self.transcript_tokens), (
+            f"Number of feats {len(self.feats)} and "
+            f"transcript tokens {len(self.transcript_tokens)} do not match"
         )
 
-        return len(self.flac_list)
+        return len(self.feats)
     
     def get_flac_list(self):
         flac_list = []
@@ -134,9 +142,14 @@ class ASRDataset(Dataset):
         y, sr = soundfile.read(flac_path)
         if feat_type == "fbank":
             feat = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=feat_dim)
-            feat = feat.transpose((1, 0))
+            feat = librosa.power_to_db(feat, ref=np.max)
+            feat = feat.T
+            epsilon = 1e-8
+            feat = (feat - np.mean(feat, axis=0)) / (np.std(feat, axis=0) + epsilon)
         elif feat_type == "mfcc":
             feat = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=feat_dim)
+            feat = feat.transpose((1, 0))
+            feat = (feat - np.mean(feat, axis=0)) / np.std(feat, axis=0)
         else:
             raise ValueError(f"Unsupported feature type: {feat_type}")
         
@@ -155,7 +168,6 @@ class ASRDataset(Dataset):
         # transcripts only serve as targets for CTC loss. 
         
         # the feat and transcript_tokens in batch input are all np.ndarray
-
         batch_feats = [x[0] for x in batch]
         feats_lengths = [x.shape[0] for x in batch_feats]
         batch_transcripts = [x[1] for x in batch]
@@ -179,6 +191,27 @@ class ASRDataset(Dataset):
         # padded_feats: Tensor (B, T, feat_dim), padded_transcripts: Tensor (B, L)
         # feats_lengths: Tensor (B, ), transcript_lengths: Tensor (B, )
         return padded_feats, padded_transcripts, feats_lengths, transcript_lengths
+    
+    def collate_fn_batch_1(self, batch):
+        # collate_fn for batch size 1, which without padding
+
+        batch_feats = [x[0] for x in batch]
+        feats_lengths = [x.shape[0] for x in batch_feats]
+        batch_transcripts = [x[1] for x in batch]
+        transcript_lengths = [len(x) for x in batch_transcripts]
+
+        feats_lengths = np.array(feats_lengths) # (B, )
+        transcript_lengths = np.array(transcript_lengths) # (B, )
+
+        batch_feats = np.array(batch_feats)
+        batch_transcripts = np.array(batch_transcripts)
+        
+        batch_feats = Tensor(batch_feats) # TODO: .to(device) in train script
+        feats_lengths = Tensor(feats_lengths, requires_grad=False)
+        batch_transcripts = Tensor(batch_transcripts, requires_grad=False)
+        transcript_lengths = Tensor(transcript_lengths, requires_grad=False)
+
+        return batch_feats, batch_transcripts, feats_lengths, transcript_lengths
 
 
 
