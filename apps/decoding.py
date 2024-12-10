@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import needle as ndl
 from needle import Tensor
+from pprint import pprint
 
 def generate(logits, beam_width: int, blank_id: int, vocab: List[str] = None) -> List[List[Tuple[str, float]]]:
     """
@@ -88,6 +89,7 @@ def test_repeated_chars():
     
     # Create a simple vocabulary
     vocab = ['a', 'b', 'c', '-']  # '-' is blank
+    print("Vocabulary:", vocab)
     
     # Create dummy logits that favor the sequence "abbc"
     # with blanks between the repeated 'b's
@@ -112,11 +114,13 @@ def test_repeated_chars():
         vocab=vocab
     )
     
-    print("\nResults for each sequence in batch:")
+    print("Beam width: 3")
     for batch_idx, batch_results in enumerate(results):
         print(f"\nBatch {batch_idx + 1}:")
+        print("Input sequence:", "".join([vocab[s] for s in (sequence1 if batch_idx == 0 else sequence2)]))
+        print("Beam search results:")
         for seq, log_prob in batch_results:
-            print(f"Sequence: {seq:10} Log-probability: {log_prob:.4f}")
+            print(f"Decoded sequence: '{seq}' \n Log probability: {log_prob:.4f}")
         
 if __name__ == "__main__":
     test_repeated_chars()
