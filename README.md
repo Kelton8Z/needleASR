@@ -148,5 +148,3 @@ The implementation of Needle was started from the assignments designed by Profes
 **Qingzheng Wang** provided the implementation of Needle and also collaborated with **Kelton Zhang** on the implementation of features for CTC-based ASR.
 
 **Qingzheng Wang** is with CMU Information Networking Institute, and **Kelton Zhang** is with CMU Department of Electrical and Computer Engineering. 
-
-[/10740_Proposal.pdf]: 
