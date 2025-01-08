@@ -1,15 +1,9 @@
 <div align="center">
-  <h1>
-  NeedleASR
-  </h1>
-    <img src="assets/needle.png" width="320" />
+    <img src="assets/needle.png" width="360" />
     <p>
-        A deep learning framework supports CTC-based speech recognition. 
-      	[[Proposal]](./10714_Proposal.pdf) [[Report]](https://colab.research.google.com/drive/1lCXbd-8ypRbmNh6KKXV472l3L1J0hrAP?usp=sharing)
+        A deep learning framework supports CTC-based speech recognition.
     </p>
 </div>
-
-
 NeedleASR is an enhanced version of Needle (Necessary element of deep learning), a deep learning framework developed as part of CMU's course 10-714 *Deep Learning Systems: Algorithms and Implementation* [[Link]](https://dlsyscourse.org). This framework is designed to support Automatic Speech Recognition (ASR) based on Connectionist Temporal Classification (CTC). 
 
 [[Proposal]](./10714_Proposal.pdf) [[Report]](https://colab.research.google.com/drive/1lCXbd-8ypRbmNh6KKXV472l3L1J0hrAP?usp=sharing)
