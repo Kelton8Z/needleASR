@@ -3,7 +3,7 @@
     <p>
         A deep learning framework supports CTC-based speech recognition.
     </p>
-    <a href="./10714_Proposal.pdf">[Proposal]  </a> 
+    <a href="./10714_Proposal.pdf">[Proposal]</a> 
     <a href="https://colab.research.google.com/drive/1lCXbd-8ypRbmNh6KKXV472l3L1J0hrAP?usp=sharing">[Report]</a>
 </div>
 
