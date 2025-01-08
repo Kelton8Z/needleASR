@@ -1,7 +1,9 @@
 <div align="center">
     <img src="assets/needle.png" width="360" />
-    A deep learning framework supports CTC-based speech recognition.
-    <a href="./10714_Proposal.pdf" style="margin-right: 50px;">[Proposal]</a> 
+    <p>
+        A deep learning framework supports CTC-based speech recognition.
+    </p>
+    <a href="./10714_Proposal.pdf">[Proposal]</a> 
     <a href="https://colab.research.google.com/drive/1lCXbd-8ypRbmNh6KKXV472l3L1J0hrAP?usp=sharing">[Report]</a>
 </div>
 
