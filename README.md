@@ -21,7 +21,7 @@ NeedleASR is an enhanced version of Needle (Necessary element of deep learning),
 
 3. **Neural Network Modules**:
 
-   <img src="assets/modules.png" alt="eend_der" style="zoom:10%;" />
+   <img src="assets/modules.png" alt="eend_der" width="360" />
 
    NeedleASR provides comprehensive support for modules commonly used in deep neural networks, including:
 
